@@ -1,0 +1,24 @@
+# 核心依赖
+sherpa-onnx>=1.12.9
+torch>=2.6.0
+silero-vad>=4.0.0
+numpy>=1.21.0
+PyAudio>=0.2.11
+
+# GPU支持 (可选)
+onnxruntime-gpu>=1.12.0
+
+# 工具库
+dataclasses-json>=0.5.7
+typing-extensions>=4.0.0
+psutil>=5.8.0
+
+# 开发依赖
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=22.0.0
+flake8>=5.0.0
+
+# 音频处理
+soundfile>=0.12.0
+librosa>=0.9.0

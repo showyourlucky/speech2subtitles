@@ -1,0 +1,215 @@
+{
+  "timestamp": "2025-09-28T02:15:29+08:00",
+  "analysis_version": "1.0",
+  "project": {
+    "name": "speech2subtitles",
+    "description": "实时语音转录系统 - 基于sherpa-onnx和silero_vad的高性能语音识别",
+    "version": "0.1.0",
+    "path": "F:\\py\\speech2subtitles",
+    "language": "python",
+    "framework": "sherpa-onnx + silero_vad"
+  },
+  "architecture": {
+    "pattern": "event_driven_pipeline",
+    "main_coordinator": "src/coordinator/pipeline.py",
+    "entry_point": "main.py",
+    "config_system": "src/config/manager.py"
+  },
+  "modules": {
+    "src/config": {
+      "status": "complete",
+      "description": "配置管理和命令行解析",
+      "key_files": ["manager.py", "models.py"],
+      "entry_points": ["ConfigManager", "Config"],
+      "coverage": 95,
+      "issues": ["配置字段缺失(channels)", "参数验证需增强"]
+    },
+    "src/audio": {
+      "status": "complete",
+      "description": "音频捕获和设备管理",
+      "key_files": ["capture.py", "models.py"],
+      "entry_points": ["AudioCapture", "AudioConfig"],
+      "coverage": 85,
+      "issues": ["Windows系统音频支持需完善"]
+    },
+    "src/vad": {
+      "status": "complete",
+      "description": "语音活动检测",
+      "key_files": ["detector.py", "models.py"],
+      "entry_points": ["VoiceActivityDetector", "VadConfig"],
+      "coverage": 90,
+      "issues": ["模型下载路径优化"]
+    },
+    "src/transcription": {
+      "status": "incomplete",
+      "description": "语音转录引擎",
+      "key_files": ["engine.py", "models.py"],
+      "entry_points": ["TranscriptionEngine", "TranscriptionConfig"],
+      "coverage": 40,
+      "issues": ["模型加载未实现", "sherpa-onnx集成待完成"]
+    },
+    "src/output": {
+      "status": "complete",
+      "description": "输出格式化和处理",
+      "key_files": ["handler.py", "models.py"],
+      "entry_points": ["OutputHandler", "OutputConfig"],
+      "coverage": 95,
+      "issues": ["字幕文件生成功能待扩展"]
+    },
+    "src/hardware": {
+      "status": "complete",
+      "description": "GPU/CPU硬件检测",
+      "key_files": ["gpu_detector.py", "models.py"],
+      "entry_points": ["GPUDetector", "SystemInfo"],
+      "coverage": 85,
+      "issues": ["多GPU支持优化"]
+    },
+    "src/coordinator": {
+      "status": "has_bugs",
+      "description": "流水线协调和事件管理",
+      "key_files": ["pipeline.py"],
+      "entry_points": ["TranscriptionPipeline", "PipelineEvent"],
+      "coverage": 80,
+      "issues": ["配置初始化参数错误", "VadResult数据结构不匹配"]
+    },
+    "src/utils": {
+      "status": "complete",
+      "description": "通用工具和错误处理",
+      "key_files": ["logger.py", "error_handler.py"],
+      "entry_points": ["Logger", "ErrorHandler"],
+      "coverage": 90,
+      "issues": []
+    }
+  },
+  "testing": {
+    "test_framework": "pytest",
+    "test_directory": "tests/",
+    "coverage_target": 85,
+    "test_types": ["unit", "integration", "performance"],
+    "test_files": [
+      "test_config.py",
+      "test_audio.py",
+      "test_vad.py",
+      "test_transcription.py",
+      "test_output.py",
+      "test_gpu.py",
+      "test_coordinator.py",
+      "test_utils.py",
+      "test_integration.py"
+    ]
+  },
+  "dependencies": {
+    "core": [
+      "sherpa-onnx>=1.12.9",
+      "torch>=2.6.0",
+      "silero-vad>=4.0.0",
+      "numpy>=1.21.0",
+      "PyAudio>=0.2.11"
+    ],
+    "optional": [
+      "onnxruntime-gpu>=1.12.0"
+    ],
+    "dev": [
+      "pytest>=7.0.0",
+      "pytest-cov>=4.0.0",
+      "black>=22.0.0",
+      "flake8>=5.0.0"
+    ]
+  },
+  "bugs": {
+    "critical": [
+      {
+        "id": "BUG-001",
+        "file": "src/coordinator/pipeline.py",
+        "lines": "177-210",
+        "description": "流水线初始化配置参数类型错误",
+        "impact": "系统无法启动"
+      },
+      {
+        "id": "BUG-002",
+        "file": "src/transcription/engine.py",
+        "lines": "195-202",
+        "description": "TranscriptionEngine模型加载未实现",
+        "impact": "转录功能不可用"
+      }
+    ],
+    "high": [
+      {
+        "id": "BUG-003",
+        "file": "src/coordinator/pipeline.py",
+        "lines": "172",
+        "description": "音频配置格式枚举不匹配",
+        "impact": "音频格式错误"
+      }
+    ],
+    "medium": [
+      {
+        "id": "BUG-004",
+        "file": "src/coordinator/pipeline.py",
+        "lines": "369",
+        "description": "VadResult数据结构不匹配",
+        "impact": "VAD结果处理错误"
+      }
+    ]
+  },
+  "documentation": {
+    "main_doc": "CLAUDE.md",
+    "module_docs": [
+      "src/config/CLAUDE.md",
+      "src/audio/CLAUDE.md",
+      "src/vad/CLAUDE.md",
+      "src/transcription/CLAUDE.md",
+      "src/output/CLAUDE.md",
+      "src/hardware/CLAUDE.md",
+      "src/coordinator/CLAUDE.md",
+      "src/utils/CLAUDE.md"
+    ],
+    "bug_report": "BUG_REPORT.md",
+    "coverage": "完整"
+  },
+  "tools": {
+    "debug_tools": [
+      "tools/gpu_info.py",
+      "tools/audio_info.py",
+      "tools/vad_test.py",
+      "tools/performance_test.py"
+    ],
+    "package_manager": "uv",
+    "formatter": "black",
+    "linter": "flake8"
+  },
+  "scan_statistics": {
+    "total_files_scanned": 85,
+    "code_files": 45,
+    "test_files": 15,
+    "config_files": 8,
+    "documentation_files": 12,
+    "model_files": 2,
+    "coverage_percentage": 92,
+    "issues_found": 8,
+    "critical_issues": 2
+  },
+  "recommendations": {
+    "immediate": [
+      "修复pipeline.py中的配置初始化错误",
+      "实现TranscriptionEngine模型加载功能",
+      "补全Config模型缺失的字段"
+    ],
+    "short_term": [
+      "统一配置字段命名和类型",
+      "完善VadResult数据结构",
+      "增强错误处理机制"
+    ],
+    "long_term": [
+      "重构配置管理系统",
+      "优化模块间耦合度",
+      "扩展多模型支持"
+    ]
+  },
+  "next_steps": [
+    "修复Critical级别的bug使系统可运行",
+    "完善TranscriptionEngine模型加载功能",
+    "增加端到端测试验证修复效果",
+    "优化配置管理和参数传递机制"
+  ]
+}
