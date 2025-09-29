@@ -273,7 +273,7 @@ python tools/gpu_info.py
 # 重启电脑清理内存
 
 # 强制使用CPU
-python main.py --model-path models/sense-voice.onnx --input-source microphone --no-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --no-gpu
 ```
 
 **优化内存使用**
@@ -296,7 +296,7 @@ export CUDA_VISIBLE_DEVICES=0
 #### 诊断步骤
 ```bash
 # 启用性能监控
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 
 # 检查系统资源
 # Windows: 任务管理器
@@ -308,7 +308,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 **调整VAD敏感度**
 ```bash
 # 降��敏感度减少处理量
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.7
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.7
 ```
 
 **优化系统设置**
@@ -317,7 +317,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 set OMP_NUM_THREADS=4
 
 # 设置优先级
-start /high python main.py --model-path models/sense-voice.onnx --input-source microphone
+start /high python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 ```
 
 **使用较小模型**
@@ -388,10 +388,10 @@ net start "Windows Audio"
 
 ```bash
 # 最详细的调试信息
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 
 # 将日志输出到文件
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG > debug.log 2>&1
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG > debug.log 2>&1
 ```
 
 ### 2. 分步测试
@@ -417,7 +417,7 @@ python test_transcription_engine.py
 
 ```bash
 # 使用最小配置测试
-python main.py --model-path models/sense-voice.onnx --input-source microphone --no-gpu --log-level WARNING
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --no-gpu --log-level WARNING
 
 # 禁用VAD测试
 # 临时修改代码跳过VAD处理
@@ -477,7 +477,7 @@ python tools/audio_info.py
 
 ```bash
 # 创建最简单的复现步骤
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 ### 联系支持

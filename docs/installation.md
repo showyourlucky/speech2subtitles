@@ -186,7 +186,7 @@ python tools/gpu_info.py
 3. **回退到CPU**
    ```bash
    # 强制使用CPU
-   python main.py --model-path models/sense-voice.onnx --input-source microphone --no-gpu
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --no-gpu
    ```
 
 ## 音频设备配置
@@ -218,10 +218,10 @@ python tools/audio_info.py
 
 ```bash
 # 测试麦克风输入
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 
 # 测试系统音频输入
-python main.py --model-path models/sense-voice.onnx --input-source system
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system
 ```
 
 ## 验证安装
@@ -254,7 +254,7 @@ python test_integration.py
 
 ```bash
 # 验证基本功能（需要真实模型文件）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --help
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --help
 
 # 验证所有组件
 python -c "

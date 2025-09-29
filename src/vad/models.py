@@ -6,7 +6,7 @@
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Dict, Any
 from enum import Enum
 import time
 import os
@@ -63,6 +63,8 @@ class VadConfig:
     """
     VAD配置类 - 支持多模型选择
     包含语音活动检测的所有配置参数
+
+    增强版配置验证，支持可配置的响应性调整
     """
     model: VadModel = VadModel.SILERO     # 使用的VAD模型版本
     model_path: Optional[str] = None         # 自定义模型路径，None时使用默认路径
@@ -89,25 +91,47 @@ class VadConfig:
 
     def validate(self) -> bool:
         """
-        验证VAD配置的有效性，包括模型路径检查
+        验证VAD配置的有效性，包括模型路径检查和新增参数验证
+
+        增强版验证，包含类型检查和范围验证
 
         Returns:
             bool: 配置是否有效
+
+        Raises:
+            ConfigurationError: 当配置无效时抛出详细错误信息
         """
-        if not 0.0 <= self.threshold <= 1.0:          # 阈值必须在0-1之间
-            return False
-        if self.min_speech_duration_ms <= 0:          # 最小语音时长必须为正数
-            return False
-        if self.min_silence_duration_ms <= 0:         # 最小静音时长必须为正数
-            return False
-        if self.max_speech_duration_ms <= 0:          # 最大语音时长必须为正数
-            return False
-        if self.min_speech_duration_ms >= self.max_speech_duration_ms:  # 最小时长不能大于等于最大时长
-            return False
-        if self.window_size_samples <= 0:             # 窗口大小必须为正数
-            return False
-        if self.sample_rate <= 0:                     # 采样率必须为正数
-            return False
+        # 基础数值范围验证
+        if not 0.0 <= self.threshold <= 1.0:
+            raise ConfigurationError(f"语音检测阈值必须在0.0-1.0之间，当前值: {self.threshold}")
+
+        if self.min_speech_duration_ms <= 0:
+            raise ConfigurationError(f"最小语音持续时间必须为正数，当前值: {self.min_speech_duration_ms}ms")
+
+        if self.min_silence_duration_ms <= 0:
+            raise ConfigurationError(f"最小静音持续时间必须为正数，当前值: {self.min_silence_duration_ms}ms")
+
+        if self.max_speech_duration_ms <= 0:
+            raise ConfigurationError(f"最大语音持续时间必须为正数，当前值: {self.max_speech_duration_ms}ms")
+
+        if self.min_speech_duration_ms >= self.max_speech_duration_ms:
+            raise ConfigurationError(
+                f"最小语音持续时间({self.min_speech_duration_ms}ms)不能大于等于"
+                f"最大语音持续时间({self.max_speech_duration_ms}ms)"
+            )
+
+        if self.window_size_samples <= 0:
+            raise ConfigurationError(f"窗口大小必须为正数，当前值: {self.window_size_samples}")
+
+        if self.sample_rate <= 0:
+            raise ConfigurationError(f"采样率必须为正数，当前值: {self.sample_rate}")
+
+        # 类型验证
+        if not isinstance(self.threshold, (int, float)):
+            raise ConfigurationError(f"语音检测阈值必须为数值类型，当前类型: {type(self.threshold)}")
+
+        if not isinstance(self.min_speech_duration_ms, (int, float)):
+            raise ConfigurationError(f"最小语音持续时间必须为数值类型，当前类型: {type(self.min_speech_duration_ms)}")
 
         # 如果使用sherpa-onnx，检查模型文件路径
         if self.use_sherpa_onnx:

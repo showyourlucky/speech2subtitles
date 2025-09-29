@@ -11,7 +11,7 @@
 .venv\Scripts\activate
 
 # 基本启动命令
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 ```
 
 ### 系统输出
@@ -55,7 +55,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone
 
 ```bash
 # 使用ONNX格式模型
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 
 # 使用BIN格式模型
 python main.py --model-path models/sense-voice.bin --input-source microphone
@@ -69,10 +69,10 @@ python main.py --model-path "C:\models\sense-voice.onnx" --input-source micropho
 
 ```bash
 # 麦克风输入
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 
 # 系统音频输入
-python main.py --model-path models/sense-voice.onnx --input-source system
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system
 ```
 
 ### 可选参数
@@ -82,23 +82,23 @@ python main.py --model-path models/sense-voice.onnx --input-source system
 
 ```bash
 # 高敏感度（适合安静环境）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.3
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.3
 
 # 中等敏感度（推荐设置）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.5
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.5
 
 # 低敏感度（适合嘈杂环境）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.8
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.8
 ```
 
 #### GPU控制参数
 
 ```bash
 # 强制启用GPU（默认自动检测）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --use-gpu
 
 # 强制使用CPU
-python main.py --model-path models/sense-voice.onnx --input-source microphone --no-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --no-gpu
 ```
 
 #### --log-level
@@ -106,16 +106,16 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 
 ```bash
 # 调试模式（详细输出）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 
 # 信息模式（默认）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level INFO
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level INFO
 
 # 警告模式（仅警告和错误）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level WARNING
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level WARNING
 
 # 错误模式（仅错误）
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level ERROR
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level ERROR
 ```
 
 ## 使用场景
@@ -127,7 +127,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 ```bash
 # 推荐配置
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source microphone \
     --vad-sensitivity 0.4 \
     --use-gpu \
@@ -146,7 +146,7 @@ python main.py \
 ```bash
 # 推荐配置
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source system \
     --vad-sensitivity 0.6 \
     --use-gpu
@@ -164,7 +164,7 @@ python main.py \
 ```bash
 # 推荐配置
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source microphone \
     --vad-sensitivity 0.3 \
     --log-level WARNING
@@ -182,7 +182,7 @@ python main.py \
 ```bash
 # 推荐配置
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source system \
     --vad-sensitivity 0.7 \
     --use-gpu
@@ -232,7 +232,7 @@ python main.py \
 启用调试模式可查看详细性能信息：
 
 ```bash
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 输出示例：
@@ -267,7 +267,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 在调试模式下会显示置信度信息：
 
 ```bash
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 输出：
@@ -286,7 +286,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 @echo off
 cd /d "F:\py\speech2subtitles"
 call .venv\Scripts\activate.bat
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.5
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.5
 pause
 ```
 
@@ -299,19 +299,19 @@ pause
 #### 会议模式
 ```bash
 # meeting.bat
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.4 --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.4 --use-gpu
 ```
 
 #### 直播模式
 ```bash
 # streaming.bat
-python main.py --model-path models/sense-voice.onnx --input-source system --vad-sensitivity 0.6 --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --vad-sensitivity 0.6 --use-gpu
 ```
 
 #### 调试模式
 ```bash
 # debug.bat
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 ## 停止和退出
@@ -353,7 +353,7 @@ python main.py --model-path models/sense-voice.onnx --input-source microphone --
 
 ```bash
 # 启用GPU加速
-python main.py --model-path models/sense-voice.onnx --input-source microphone --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --use-gpu
 
 # 设置GPU内存分配
 set CUDA_VISIBLE_DEVICES=0
@@ -363,10 +363,10 @@ set CUDA_VISIBLE_DEVICES=0
 
 ```bash
 # 降低VAD敏感度以减少误触发
-python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.7
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.7
 
 # 优化日志级别
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level WARNING
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level WARNING
 ```
 
 ### 3. 系统优化
@@ -389,13 +389,13 @@ set PYTHONOPTIMIZE=1
    python tools/audio_info.py
 
    # 测试不同输入源
-   python main.py --model-path models/sense-voice.onnx --input-source system
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system
    ```
 
 2. **转录准确率低**
    ```bash
    # 调整VAD敏感度
-   python main.py --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.3
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.3
 
    # 检查音频质量
    python tools/audio_info.py
@@ -404,7 +404,7 @@ set PYTHONOPTIMIZE=1
 3. **程序运行缓慢**
    ```bash
    # 启用GPU加速
-   python main.py --model-path models/sense-voice.onnx --input-source microphone --use-gpu
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --use-gpu
 
    # 检查GPU状态
    python tools/gpu_info.py
@@ -413,7 +413,7 @@ set PYTHONOPTIMIZE=1
 4. **内存使用过高**
    ```bash
    # 强制使用CPU（降低内存使用）
-   python main.py --model-path models/sense-voice.onnx --input-source microphone --no-gpu
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --no-gpu
    ```
 
 ---

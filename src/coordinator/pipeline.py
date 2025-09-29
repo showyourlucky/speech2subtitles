@@ -225,8 +225,8 @@ class TranscriptionPipeline:
                 threshold=self.config.vad_threshold,                            # VAD敏感度阈值
                 window_size_samples=vad_window_samples,                         # VAD检测窗口大小（采样点数）
                 sample_rate=self.config.sample_rate,                            # 与音频采样率保持一致
-                min_speech_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 500,  # 基于敏感度的语音持续时间
-                min_silence_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 200, # 基于敏感度的静音持续时间
+                #min_speech_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 500,  # 基于敏感度的语音持续时间
+                #min_silence_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 200, # 基于敏感度的静音持续时间
                 return_confidence=True                                          # 返回置信度分数
             )
             self.vad_detector = VoiceActivityDetector(vad_config)
@@ -407,22 +407,74 @@ class TranscriptionPipeline:
             self.vad_detector.process_audio(event.data.data)
 
     def _handle_vad_result(self, event: PipelineEvent) -> None:
-        """处理VAD检测结果事件"""
+        """处理VAD检测结果事件 - 增强版转录触发逻辑"""
         if self.transcription_engine and isinstance(event.data, VadResult):
             self.statistics.total_vad_detections += 1
 
-            # 添加调试日志
-            logger.debug(f"VAD结果: state={event.data.state.name}, is_speech={event.data.is_speech}, "
-                        f"has_audio_data={event.data.audio_data is not None}, "
-                        f"confidence={event.data.confidence:.3f}")
+            # 增强版调试日志，包含更多详细信息
+            vad_result = event.data
+            logger.debug(
+                f"VAD结果: state={vad_result.state.name}, is_speech={vad_result.is_speech}, "
+                f"has_audio_data={vad_result.audio_data is not None}, "
+                f"confidence={vad_result.confidence:.3f}, "
+                f"timestamp={vad_result.timestamp:.3f}, "
+                f"duration_ms={vad_result.duration_ms:.1f}"
+            )
 
-            # 只有检测到语音时才进行转录
-            if event.data.state == VadState.SPEECH and event.data.audio_data is not None:
-                logger.info(f"触发转录: 音频数据长度={len(event.data.audio_data)}")
-                self.transcription_engine.transcribe_audio(event.data.audio_data)
+            # 修复：增强转录触发条件验证
+            speech_states = [VadState.SPEECH, VadState.TRANSITION_TO_SPEECH]
+            has_valid_audio = (
+                vad_result.audio_data is not None and
+                len(vad_result.audio_data) > 0
+            )
+
+            # 新增：置信度检查，避免低质量语音的转录 - 降低阈值提高响应性
+            confidence_threshold = 0.1  # 降低最低置信度阈值
+            has_sufficient_confidence = vad_result.confidence >= confidence_threshold
+
+            # 新增：音频质量检查 - 降低阈值提高响应性
+            min_audio_samples = 32   # 降低最小音频样本数（约2ms @ 16kHz）
+            has_sufficient_audio = has_valid_audio and len(vad_result.audio_data) >= min_audio_samples
+
+            should_transcribe = (
+                vad_result.is_speech and
+                vad_result.state in speech_states and
+                has_sufficient_audio and
+                has_sufficient_confidence
+            )
+
+            if should_transcribe:
+
+                logger.info(
+                    f"触发转录: state={vad_result.state.name}, "
+                    f"音频数据长度={len(vad_result.audio_data)}, "
+                    f"置信度={vad_result.confidence:.3f}, "
+                    f"持续时间={vad_result.duration_ms:.1f}ms"
+                )
+                try:
+                    self.transcription_engine.transcribe_audio(vad_result.audio_data)
+                    # 更新成功统计
+                    self.statistics.update_activity()
+                except Exception as e:
+                    logger.error(f"转录处理失败: {e}")
+                    self._emit_event(EventType.ERROR, str(e), "transcription_trigger")
             else:
-                logger.debug(f"未触发转录: state={event.data.state.name}, "
-                           f"has_audio={event.data.audio_data is not None}")
+                # 增强的调试信息，帮助排查问题
+                skip_reasons = []
+                if not vad_result.is_speech:
+                    skip_reasons.append("no_speech")
+                if vad_result.state not in speech_states:
+                    skip_reasons.append(f"wrong_state({vad_result.state.name})")
+                if not has_sufficient_audio:
+                    audio_len = len(vad_result.audio_data) if vad_result.audio_data is not None else 0
+                    skip_reasons.append(f"insufficient_audio({audio_len}<{min_audio_samples})")
+                if not has_sufficient_confidence:
+                    skip_reasons.append(f"low_confidence({vad_result.confidence:.3f}<{confidence_threshold})")
+
+                # logger.debug(
+                #     f"未触发转录: {', '.join(skip_reasons)}, "
+                #     f"state={vad_result.state.name}"
+                # )
 
     def _handle_transcription_result(self, event: PipelineEvent) -> None:
         """处理转录结果事件"""
@@ -537,6 +589,7 @@ class TranscriptionPipeline:
             Dict: 统计信息字典
         """
         return {
+            # 基础统计
             "state": self.state.value,
             "uptime": self.statistics.uptime,
             "total_audio_chunks": self.statistics.total_audio_chunks,
@@ -550,7 +603,7 @@ class TranscriptionPipeline:
 
     def get_status(self) -> Dict[str, Any]:
         """
-        获取流水线状态信息
+        获取流水线状态信息 - 增强版包含组件状态和配置信息
 
         Returns:
             Dict: 状态信息字典
@@ -558,7 +611,8 @@ class TranscriptionPipeline:
         status = {
             "state": self.state.value,
             "is_running": self.is_running,
-            "components": {}
+            "components": {},
+            "configuration": {}
         }
 
         # 组件状态
@@ -566,6 +620,10 @@ class TranscriptionPipeline:
             status["components"]["audio_capture"] = "initialized"
         if self.vad_detector:
             status["components"]["vad_detector"] = "initialized"
+            # 添加VAD配置信息
+            if hasattr(self.vad_detector, '_detector') and hasattr(self.vad_detector._detector, 'config'):
+                vad_config = self.vad_detector._detector.config
+                status["configuration"]["vad"] = vad_config.get_responsiveness_config()
         if self.transcription_engine:
             status["components"]["transcription_engine"] = "initialized"
         if self.output_handler:

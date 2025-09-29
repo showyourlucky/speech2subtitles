@@ -104,7 +104,7 @@ echo ✅ 开发环境部署完成！
 echo.
 echo 下一步:
 echo 1. 下载sense-voice模型文件到models/目录
-echo 2. 运行: python main.py --model-path models/sense-voice.onnx --input-source microphone
+echo 2. 运行: python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 echo.
 pause
 ```

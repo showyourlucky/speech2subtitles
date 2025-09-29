@@ -82,21 +82,21 @@ mkdir models
 .venv\Scripts\activate
 
 # 运行转录系统
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 ```
 
 #### 完整参数示例
 ```bash
 # 使用麦克风输入，启用GPU加速
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source microphone \
     --vad-sensitivity 0.7 \
     --use-gpu
 
 # 使用系统音频输入，CPU处理
 python main.py \
-    --model-path models/sense-voice.onnx \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source system \
     --no-gpu
 ```
@@ -252,7 +252,7 @@ python test_integration.py
 
 启用调试日志：
 ```bash
-python main.py --model-path models/sense-voice.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 日志文件位置：

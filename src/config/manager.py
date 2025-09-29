@@ -28,9 +28,9 @@ class ConfigManager:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 使用示例:
-  %(prog)s --model-path models/sense-voice.onnx --input-source microphone
-  %(prog)s --model-path models/sense-voice.onnx --input-source system --no-gpu
-  %(prog)s --model-path models/sense-voice.onnx --input-source microphone --vad-sensitivity 0.7
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.7
 
 支持的输入源:
   microphone    从麦克风捕获音频

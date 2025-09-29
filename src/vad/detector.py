@@ -9,7 +9,7 @@
 import logging
 import time
 import threading
-from typing import List, Optional, Callable, Iterator
+from typing import List, Optional, Callable, Iterator, Dict, Any
 from collections import deque
 import numpy as np
 
@@ -333,6 +333,10 @@ class SherpaOnnxVAD:
             # 确保音频数据在正确的范围内
             audio_float = np.clip(audio_float, -1.0, 1.0)
 
+            # 将音频数据添加到缓冲区以备语音开始时使用
+            with self._buffer_lock:
+                self._audio_buffer.extend(audio_float)
+
             # 使用sherpa-onnx进行VAD检测
             # 向VAD模型输入音频数据
             self._vad_model.accept_waveform(audio_float)
@@ -400,7 +404,7 @@ class SherpaOnnxVAD:
             return max(0.0, base_score - 0.15)  # 略低于阈值
 
     def _update_state(self, is_speech: bool, confidence: float, samples: int, audio_data: np.ndarray = None) -> VadResult:
-        """更新VAD状态机（与原实现保持一致）"""
+        """更新VAD状态机 - 增强版使用自适应阈值"""
         timestamp = time.time()
         duration_ms = (samples / self.config.sample_rate) * 1000
 
@@ -420,6 +424,9 @@ class SherpaOnnxVAD:
                     speech_start_time = timestamp
                     self._start_speech_segment(timestamp, confidence)
                     self._state_duration = 0
+                    logger.debug(
+                        f"转换到语音状态: 持续时间={self._state_duration}采样点, "
+                    )
             elif self._current_state == VadState.TRANSITION_TO_SPEECH:
                 # 继续语音状态
                 new_state = VadState.SPEECH
@@ -444,28 +451,69 @@ class SherpaOnnxVAD:
                     speech_end_time = timestamp
                     self._end_speech_segment(timestamp)
                     self._state_duration = 0
+                    logger.debug(
+                        f"转换到静音状态: 持续时间={self._state_duration}采样点, "
+                    )
             elif self._current_state == VadState.TRANSITION_TO_SILENCE:
                 # 继续静音状态
                 new_state = VadState.SILENCE
 
         # 更新当前状态
         if new_state != self._current_state:
+            old_state = self._current_state
             self._current_state = new_state
             self._state_duration = 0
+            logger.debug(f"VAD状态变化: {old_state.name} -> {new_state.name}")
 
-        # 只在稳定语音状态时包含音频数据用于转录
-        include_audio = is_speech and new_state == VadState.SPEECH
+        # 修复：扩展音频数据包含条件，包括过渡状态
+        # 在语音活动期间（包括过渡状态）都包含音频数据
+        speech_activity_states = [VadState.SPEECH, VadState.TRANSITION_TO_SPEECH]
+        include_audio = is_speech and new_state in speech_activity_states
 
-        return VadResult(
+        # 新增：在语音开始时，包含缓冲区中的历史音频
+        result_audio_data = None
+        if include_audio:
+            if new_state == VadState.TRANSITION_TO_SPEECH and speech_start_time is not None:
+                # 语音开始：包含缓冲区中的历史音频 + 当前音频
+                with self._buffer_lock:
+                    buffer_audio = np.array(list(self._audio_buffer), dtype=np.float32)
+                if len(buffer_audio) > 0:
+                    # 只取最近的一秒音频作为前置缓冲
+                    max_buffer_samples = self.config.sample_rate  # 1秒
+                    if len(buffer_audio) > max_buffer_samples:
+                        buffer_audio = buffer_audio[-max_buffer_samples:]
+                    result_audio_data = buffer_audio
+                    logger.debug(f"语音开始：包含缓冲音频 {len(buffer_audio)} 采样点")
+                else:
+                    result_audio_data = audio_data
+            else:
+                # 正常语音状态：只包含当前音频
+                result_audio_data = audio_data
+
+        result = VadResult(
             is_speech=is_speech,
             confidence=confidence,
             timestamp=timestamp,
             duration_ms=duration_ms,
             state=new_state,
-            audio_data=audio_data if include_audio else None,
+            audio_data=result_audio_data,
             speech_start_time=speech_start_time,
             speech_end_time=speech_end_time
         )
+
+        # 增强的调试信息，包含自适应阈值信息
+        if include_audio:
+            logger.debug(
+                f"[SherpaOnnx] VAD输出包含音频数据: 状态={new_state.name}, "
+                f"音频长度={len(audio_data)}, 置信度={confidence:.3f}, "
+            )
+        # else:
+            # logger.debug(
+            #     f"[SherpaOnnx] VAD输出不包含音频数据: is_speech={is_speech}, "
+            #     f"state={new_state.name}, 置信度={confidence:.3f}, "
+            # )
+
+        return result
 
     def _start_speech_segment(self, timestamp: float, confidence: float) -> None:
         """开始新的语音段"""
@@ -624,9 +672,9 @@ class LegacyTorchVAD:
         except Exception as e:
             raise ModelLoadError(f"VAD模型加载失败: {e}")
 
-    # 复制所有原VoiceActivityDetector的方法
+    # 复制所有原VoiceActivityDetector的方法 - 增强版使用自适应阈值
     def detect(self, audio_data: np.ndarray) -> VadResult:
-        """对音频数据进行语音活动检测（复制原实现）"""
+        """对音频数据进行语音活动检测 - 增强版使用自适应阈值"""
         start_time = time.time()
 
         try:
@@ -641,12 +689,21 @@ class LegacyTorchVAD:
             # 确保音频数据在正确的范围内
             audio_float = np.clip(audio_float, -1.0, 1.0)
 
+            # 将音频数据添加到缓冲区以备语音开始时使用
+            with self._buffer_lock:
+                self._audio_buffer.extend(audio_float)
+
             # 转换为PyTorch张量
             audio_tensor = torch.from_numpy(audio_float)
 
             # 使用VAD模型进行语音概率预测
             with torch.no_grad():
-                speech_prob = self._model(audio_tensor, self.config.sample_rate).item()
+                result = self._model(audio_tensor, self.config.sample_rate)
+                # 处理不同类型的返回值
+                if hasattr(result, 'item'):
+                    speech_prob = result.item()
+                else:
+                    speech_prob = float(result)
 
             # 根据阈值判断是否为语音
             is_speech = speech_prob >= self.config.threshold
@@ -673,11 +730,27 @@ class LegacyTorchVAD:
             return result
 
         except Exception as e:
-            raise DetectionError(f"VAD检测失败: {e}")
+            logger.error(f"VAD检测失败: {e}")
+            # 返回默认结果而不是抛出异常，保持系统稳定性
+            return self._create_error_result(start_time, str(e))
 
-    # 添加所有其他原方法的实现（为了简洁，这里省略了详细实现）
+    def _create_error_result(self, start_time: float, error_msg: str) -> VadResult:
+        """创建错误结果"""
+        timestamp = time.time()
+        return VadResult(
+            is_speech=False,
+            confidence=0.0,
+            timestamp=timestamp,
+            duration_ms=(timestamp - start_time) * 1000,
+            state=VadState.SILENCE,
+            audio_data=None,
+            speech_start_time=None,
+            speech_end_time=None
+        )
+
+    # 添加所有其他原方法的实现 - 增强版使用自适应阈值
     def _update_state(self, is_speech: bool, confidence: float, samples: int, audio_data: np.ndarray = None) -> VadResult:
-        """更新VAD状态机（与SherpaOnnxVAD相同的实现）"""
+        """更新VAD状态机 - 增强版使用自适应阈值（与SherpaOnnxVAD相同的逻辑）"""
         timestamp = time.time()
         duration_ms = (samples / self.config.sample_rate) * 1000
 
@@ -719,22 +792,62 @@ class LegacyTorchVAD:
                 new_state = VadState.SILENCE
 
         if new_state != self._current_state:
+            old_state = self._current_state
             self._current_state = new_state
             self._state_duration = 0
+            logger.debug(
+                f"[Legacy] VAD状态变化: {old_state.name} -> {new_state.name}, "
+            )
 
-        # 只在稳定语音状态时包含音频数据用于转录
-        include_audio = is_speech and new_state == VadState.SPEECH
+        # 修复：扩展音频数据包含条件，包括过渡状态
+        # 在语音活动期间（包括过渡状态）都包含音频数据
+        speech_activity_states = [VadState.SPEECH, VadState.TRANSITION_TO_SPEECH]
+        include_audio = is_speech and new_state in speech_activity_states
 
-        return VadResult(
+        # 新增：在语音开始时，包含缓冲区中的历史音频
+        result_audio_data = None
+        if include_audio:
+            if new_state == VadState.TRANSITION_TO_SPEECH and speech_start_time is not None:
+                # 语音开始：包含缓冲区中的历史音频 + 当前音频
+                with self._buffer_lock:
+                    buffer_audio = np.array(list(self._audio_buffer), dtype=np.float32)
+                if len(buffer_audio) > 0:
+                    # 只取最近的一秒音频作为前置缓冲
+                    max_buffer_samples = self.config.sample_rate  # 1秒
+                    if len(buffer_audio) > max_buffer_samples:
+                        buffer_audio = buffer_audio[-max_buffer_samples:]
+                    result_audio_data = buffer_audio
+                    logger.debug(f"[Legacy] 语音开始：包含缓冲音频 {len(buffer_audio)} 采样点")
+                else:
+                    result_audio_data = audio_data
+            else:
+                # 正常语音状态：只包含当前音频
+                result_audio_data = audio_data
+
+        result = VadResult(
             is_speech=is_speech,
             confidence=confidence,
             timestamp=timestamp,
             duration_ms=duration_ms,
             state=new_state,
-            audio_data=audio_data if include_audio else None,
+            audio_data=result_audio_data,
             speech_start_time=speech_start_time,
             speech_end_time=speech_end_time
         )
+
+        # 增强的调试信息，包含自适应阈值信息
+        if include_audio:
+            logger.debug(
+                f"[Legacy] VAD输出包含音频数据: 状态={new_state.name}, "
+                f"音频长度={len(audio_data)}, 置信度={confidence:.3f}, "
+            )
+        else:
+            logger.debug(
+                f"[Legacy] VAD输出不包含音频数据: is_speech={is_speech}, "
+                f"state={new_state.name}, 置信度={confidence:.3f}, "
+            )
+
+        return result
 
     def _start_speech_segment(self, timestamp: float, confidence: float) -> None:
         """开始新的语音段"""

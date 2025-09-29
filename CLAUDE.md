@@ -89,10 +89,10 @@ graph TD
 uv sync
 
 # 3. 运行系统 - 麦克风输入
-python main.py --model-path models/sense-voice.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
 
 # 4. 运行系统 - 系统音频输入
-python main.py --model-path models/sense-voice.onnx --input-source system --no-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
 ```
 
 ### 开发环境设置
