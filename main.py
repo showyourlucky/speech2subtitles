@@ -259,7 +259,7 @@ def validate_runtime_environment() -> bool:
 
     # 如果有缺失的依赖，提供安装指导
     if missing_deps:
-        print(f"\n❌ 缺少必要依赖: {', '.join(missing_deps)}")
+        print(f"\n[ERROR] 缺少必要依赖: {', '.join(missing_deps)}")
         print("请运行以下命令安装:")
         for dep in missing_deps:
             if dep == "pyaudio":
@@ -268,7 +268,7 @@ def validate_runtime_environment() -> bool:
                 print(f"  pip install {dep}")
         return False
 
-    print("\n✅ 依赖检查通过")
+    print("\n[SUCCESS] 依赖检查通过")
     return True
 
 
@@ -320,11 +320,11 @@ def main():
                 return
             else:
                 # 参数错误
-                print("\n❌ 命令行参数错误")
+                print("\n[ERROR] 命令行参数错误")
                 config_manager.print_help()
                 sys.exit(1)
         except Exception as e:
-            print(f"\n❌ 配置解析失败: {e}")
+            print(f"\n[ERROR] 配置解析失败: {e}")
             sys.exit(1)
 
         # 步骤6: 设置日志系统
@@ -364,7 +364,7 @@ def main():
 
     except Exception as e:
         # 处理未预期的异常
-        print(f"\n❌ 程序异常退出: {e}")
+        print(f"\n[ERROR] 程序异常退出: {e}")
         logging.exception("Unhandled exception in main")
         sys.exit(1)
 

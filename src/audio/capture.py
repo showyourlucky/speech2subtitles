@@ -409,37 +409,230 @@ class SystemAudioCapture(AudioCapture):
     """
     System audio capture implementation
 
-    Captures system audio output (what's playing on speakers)
+    优先使用soundcard库直接从扬声器获取环回音频，
+    如果不可用则回退到PyAudio立体声混音方案
     """
 
     def __init__(self, config: AudioConfig):
         """Initialize system audio capture"""
-        super().__init__(config)
-        logger.info("Initialized SystemAudioCapture")
+        # 检查是否使用soundcard方案
+        self._use_soundcard = self._should_use_soundcard()
+
+        if self._use_soundcard:
+            # 使用soundcard方案
+            try:
+                from .soundcard_capture import SoundcardLoopbackCapture
+                self._soundcard_capture = SoundcardLoopbackCapture(config)
+                self._pyaudio_capture = None
+                logger.info("Initialized SystemAudioCapture with soundcard backend")
+            except Exception as e:
+                logger.warning(f"Failed to initialize soundcard backend: {e}, falling back to PyAudio")
+                self._use_soundcard = False
+                self._soundcard_capture = None
+                super().__init__(config)
+                self._pyaudio_capture = self  # PyAudio capture is self
+                logger.info("Initialized SystemAudioCapture with PyAudio backend (fallback)")
+        else:
+            # 使用PyAudio方案
+            super().__init__(config)
+            self._soundcard_capture = None
+            self._pyaudio_capture = self
+            logger.info("Initialized SystemAudioCapture with PyAudio backend")
+
+    def _should_use_soundcard(self) -> bool:
+        """判断是否应该使用soundcard方案"""
+        try:
+            import soundcard as sc
+            # 检查是否有默认扬声器
+            speaker = sc.default_speaker()
+            if speaker:
+                logger.info(f"Found default speaker: {speaker.name}, preferring soundcard backend")
+                return True
+        except ImportError:
+            logger.info("soundcard library not available, using PyAudio backend")
+        except Exception as e:
+            logger.warning(f"Error checking soundcard availability: {e}, using PyAudio backend")
+
+        return False
+
+    def start(self) -> None:
+        """启动音频捕获"""
+        if self._use_soundcard and self._soundcard_capture:
+            self._soundcard_capture.start()
+            # 更新父类状态
+            self._is_running = True
+        else:
+            super().start()
+
+    def stop(self) -> None:
+        """停止音频捕获"""
+        if self._use_soundcard and self._soundcard_capture:
+            self._soundcard_capture.stop()
+            # 更新父类状态
+            self._is_running = False
+        else:
+            super().stop()
+
+    def add_callback(self, callback: Callable[[AudioChunk], None]) -> None:
+        """添加音频数据回调函数"""
+        if self._use_soundcard and self._soundcard_capture:
+            self._soundcard_capture.add_callback(callback)
+        else:
+            super().add_callback(callback)
+
+    def remove_callback(self, callback: Callable[[AudioChunk], None]) -> None:
+        """移除音频数据回调函数"""
+        if self._use_soundcard and self._soundcard_capture:
+            self._soundcard_capture.remove_callback(callback)
+        else:
+            super().remove_callback(callback)
+
+    def get_audio_chunk(self, timeout: float = 1.0) -> Optional[AudioChunk]:
+        """从队列获取下一个音频数据块"""
+        if self._use_soundcard and self._soundcard_capture:
+            return self._soundcard_capture.get_audio_chunk(timeout)
+        else:
+            return super().get_audio_chunk(timeout)
+
+    def get_stream_status(self) -> Optional[AudioStreamStatus]:
+        """获取当前流状态"""
+        if self._use_soundcard and self._soundcard_capture:
+            return self._soundcard_capture.get_stream_status()
+        else:
+            return super().get_stream_status()
+
+    @property
+    def is_running(self) -> bool:
+        """检查是否正在运行"""
+        if self._use_soundcard and self._soundcard_capture:
+            return self._soundcard_capture.is_running
+        else:
+            return super().is_running
+
+    @property
+    def backend_type(self) -> str:
+        """获取当前使用的后端类型"""
+        return "soundcard" if self._use_soundcard else "pyaudio"
+
+    @property
+    def stats(self) -> dict:
+        """获取性能统计信息"""
+        if self._use_soundcard and self._soundcard_capture:
+            return self._soundcard_capture.stats
+        else:
+            return {
+                'chunks_captured': 0,  # PyAudio版本暂不提供统计
+                'total_samples': 0,
+                'chunk_rate': 0,
+                'samples_per_second': 0
+            }
 
     @classmethod
     def find_system_audio_device(cls) -> Optional[AudioDevice]:
         """
-        Find system audio capture device
+        查找系统音频设备
 
-        On Windows, looks for "Stereo Mix" or similar
+        优先尝试soundcard环回设备，如果不可用则查找PyAudio立体声混音设备
         """
+        # 首先尝试soundcard方案
+        try:
+            from .soundcard_capture import SoundcardLoopbackCapture
+            loopback_device = SoundcardLoopbackCapture.find_default_loopback_device()
+            if loopback_device:
+                logger.info(f"Found soundcard loopback device: {loopback_device.name}")
+                return loopback_device
+        except Exception as e:
+            logger.debug(f"Soundcard device search failed: {e}")
+
+        # 回退到PyAudio立体声混音方案
+        logger.info("Falling back to PyAudio stereo mix search")
         devices = cls.list_devices()
 
-        # Common system audio device names
+        # Common system audio device names (English and Chinese)
         system_audio_names = [
             "stereo mix", "what u hear", "wave out mix",
-            "speakers", "system audio", "loopback"
+            "speakers", "system audio", "loopback",
+            "立体声混音", "立体混音", "混音", "loopback",
+            "what u hear", "wave out", "录音混音"
         ]
 
         for device in devices:
             if device.is_input_device:
                 device_name_lower = device.name.lower()
+                device_name_original = device.name
+
                 for sys_name in system_audio_names:
-                    if sys_name in device_name_lower:
+                    # 检查英文匹配（不区分大小写）
+                    if sys_name.isascii() and sys_name in device_name_lower:
+                        logger.info(f"Found PyAudio system audio device: {device.name}")
+                        return device
+                    # 检查中文匹配（区分大小写）
+                    elif not sys_name.isascii() and sys_name in device_name_original:
+                        logger.info(f"Found PyAudio system audio device: {device.name}")
                         return device
 
         return None
+
+    @classmethod
+    def get_available_backends(cls) -> List[str]:
+        """
+        获取可用的音频捕获后端列表
+
+        Returns:
+            List[str]: 可用的后端列表
+        """
+        backends = []
+
+        # 检查soundcard
+        try:
+            import soundcard as sc
+            speaker = sc.default_speaker()
+            if speaker:
+                backends.append("soundcard")
+        except:
+            pass
+
+        # 检查PyAudio
+        try:
+            import pyaudio
+            backends.append("pyaudio")
+        except:
+            pass
+
+        return backends
+
+    @classmethod
+    def list_system_audio_devices(cls) -> List[AudioDevice]:
+        """
+        列出所有可用的系统音频捕获设备
+
+        Returns:
+            List[AudioDevice]: 系统音频设备列表
+        """
+        devices = []
+
+        # 添加soundcard环回设备
+        try:
+            from .soundcard_capture import SoundcardLoopbackCapture
+            loopback_device = SoundcardLoopbackCapture.find_default_loopback_device()
+            if loopback_device:
+                loopback_device.name = f"{loopback_device.name} (Soundcard)"
+                devices.append(loopback_device)
+        except Exception as e:
+            logger.debug(f"Failed to get soundcard devices: {e}")
+
+        # 添加PyAudio立体声混音设备
+        try:
+            stereo_device = cls.find_system_audio_device()
+            if stereo_device:
+                # 检查是否已经在列表中（避免重复）
+                if not any(device.name == stereo_device.name for device in devices):
+                    stereo_device.name = f"{stereo_device.name} (PyAudio)"
+                    devices.append(stereo_device)
+        except Exception as e:
+            logger.debug(f"Failed to get PyAudio devices: {e}")
+
+        return devices
 
 
 class MicrophoneCapture(AudioCapture):

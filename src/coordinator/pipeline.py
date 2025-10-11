@@ -213,7 +213,16 @@ class TranscriptionPipeline:
                 channels=self.config.channels,        # 使用配置中的声道数
                 format_type=audio_format               # 使用动态选择的音频格式
             )
-            self.audio_capture = AudioCapture(audio_config)
+            # 根据音频源类型选择相应的捕获器
+            if self.config.input_source == "system":
+                from src.audio.capture import SystemAudioCapture
+                self.audio_capture = SystemAudioCapture(audio_config)
+                logger.info(f"Using SystemAudioCapture with backend: {self.audio_capture.backend_type}")
+            else:
+                # 麦克风输入使用标准的AudioCapture
+                self.audio_capture = AudioCapture(audio_config)
+                logger.info("Using standard AudioCapture for microphone input")
+
             self.audio_capture.add_callback(self._on_audio_data)  # 注册音频数据回调
 
             # 3. 初始化VAD检测器：语音活动检测，过滤静音段
