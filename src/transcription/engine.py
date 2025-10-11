@@ -22,6 +22,7 @@ import time             # 时间处理
 import threading        # 线程同步
 import os               # 操作系统接口
 from pathlib import Path # 路径处理
+from datetime import datetime  # 日期时间处理
 from typing import List, Optional, Callable, Iterator, Dict, Any  # 类型提示
 import numpy as np      # 数值计算库
 
@@ -52,6 +53,14 @@ try:
 except ImportError:
     ONNXRUNTIME_AVAILABLE = False
     ort = None
+
+# soundfile: 音频文件读写库
+try:
+    import soundfile as sf
+    SOUNDFILE_AVAILABLE = True
+except ImportError:
+    SOUNDFILE_AVAILABLE = False
+    sf = None
 
 from .models import (
     TranscriptionConfig, TranscriptionResult, BatchTranscriptionResult,
@@ -134,6 +143,18 @@ class TranscriptionEngine:
         self._callback_lock = threading.Lock()         # 回调线程锁
         self._model_lock = threading.Lock()            # 模型操作线程锁
 
+        # 音频保存相关配置（从配置对象获取）
+        self._audio_save_enabled = config.enable_audio_save and SOUNDFILE_AVAILABLE  # 是否启用音频保存
+        self._audio_save_dir = config.audio_save_dir                                  # 音频保存目录
+        self._audio_save_format = config.audio_save_format                           # 保存格式(wav/flac/ogg)
+        self._audio_save_successful_only = config.audio_save_successful_only         # 仅保存成功转录的音频
+        self._audio_counter = 0                                                      # 音频文件计数器
+
+        # 创建音频保存目录
+        if self._audio_save_enabled:
+            Path(self._audio_save_dir).mkdir(parents=True, exist_ok=True)
+            logger.info(f"音频保存功能已启用: {self._audio_save_dir} ({self._audio_save_format}格式)")
+
         # 验证系统依赖
         self._validate_dependencies()
 
@@ -176,6 +197,11 @@ class TranscriptionEngine:
         if self.config.use_gpu and not TORCH_AVAILABLE:
             logger.warning("PyTorch不可用，禁用GPU加速")
             self.config.use_gpu = False
+
+        # 检查音频保存功能依赖
+        if self.config.enable_audio_save and not SOUNDFILE_AVAILABLE:
+            logger.warning("soundfile库不可用，音频保存功能将被禁用。请安装: uv add soundfile")
+            self.config.enable_audio_save = False
 
     def _determine_processor_type(self) -> None:
         """
@@ -328,7 +354,7 @@ class TranscriptionEngine:
             self._recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                 model=self.config.model_path,
                 tokens=os.path.join(os.path.dirname(self.config.model_path), "tokens.txt"),
-                num_threads=4,
+                num_threads=2,
                 use_itn=True,
                 debug=False,
                 # hr_dict_dir=args.hr_dict_dir,
@@ -362,11 +388,11 @@ class TranscriptionEngine:
 
         try:
             # Validate audio format
-            if audio_data.dtype != np.float32:
-                audio_data = audio_data.astype(np.float32)
+            # if audio_data.dtype != np.float32:
+                # audio_data = audio_data.astype(np.float32)
 
             # Ensure audio is in correct range
-            audio_data = np.clip(audio_data, -1.0, 1.0)
+            # audio_data = np.clip(audio_data, -1.0, 1.0)
 
             # 检查音频数据有效性
             if len(audio_data) == 0:
@@ -400,10 +426,27 @@ class TranscriptionEngine:
                 result = stream.result
             result_text = result.text.strip() if hasattr(result, 'text') else f"检测到语音信号 (能量: {audio_energy:.4f})"
 
+            # 判断转录是否成功
+            is_successful_transcription = result_text and result_text.strip() and not result_text.startswith("[检测到语音但无法识别内容]")
+
             # 如果是空结果，提供有意义的反馈
-            if not result_text or result_text.strip() == "":
+            if not is_successful_transcription:
                 result_text = f"[检测到语音但无法识别内容] 能量: {audio_energy:.4f}"
 
+            # 保存音频文件到本地（根据配置决定是否保存）
+            should_save_audio = self._audio_save_enabled and (
+                not self._audio_save_successful_only or is_successful_transcription
+            )
+
+            if should_save_audio:
+                saved_path = self._save_audio(audio_data, result_text if is_successful_transcription else "")
+                if saved_path:
+                    if is_successful_transcription:
+                        logger.info(f"成功转录并保存音频: {saved_path}")
+                    else:
+                        logger.debug(f"保存音频文件: {saved_path}")
+                else:
+                    logger.debug("音频保存失败")
             # Calculate processing time
             processing_time = (time.time() - start_time) * 1000
 
@@ -604,6 +647,60 @@ class TranscriptionEngine:
         self._statistics.update_characters_count(result.characters_count)
         self._statistics.update_confidence(result.confidence)
         self._statistics.increment_successful()
+
+    def _save_audio(self, audio_data: np.ndarray, result_text: str = "") -> Optional[str]:
+        """
+        保存音频数据到文件
+
+        Args:
+            audio_data: 要保存的音频数据 (numpy数组, float32格式)
+            result_text: 转录结果文本，用于生成文件名
+
+        Returns:
+            保存的文件路径，如果保存失败则返回None
+        """
+        if not self._audio_save_enabled or not SOUNDFILE_AVAILABLE:
+            return None
+
+        try:
+            # 生成时间戳
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # 增加音频计数器
+            self._audio_counter += 1
+
+            # 生成文件名：基于时间戳、计数器和转录文本的简短片段
+            text_snippet = ""
+            if result_text:
+                # 取转录文本的前10个字符作为文件名的一部分
+                clean_text = "".join(c for c in result_text[:10] if c.isalnum() or c in "一二三四五六七八九十")
+                if clean_text:
+                    text_snippet = f"_{clean_text}"
+
+            filename = f"audio_{timestamp}_{self._audio_counter:04d}{text_snippet}.{self._audio_save_format}"
+            filepath = Path(self._audio_save_dir) / filename
+
+            # 确保音频数据格式正确
+            # if audio_data.dtype != np.float32:
+                # audio_data = audio_data.astype(np.float32)
+
+            # 确保音频数据在正确范围内
+            audio_data = np.clip(audio_data, -1.0, 1.0)
+
+            # 保存音频文件
+            sf.write(
+                str(filepath),
+                audio_data,
+                self.config.sample_rate,
+                format=self._audio_save_format.upper()
+            )
+
+            logger.debug(f"音频已保存: {filepath} (长度: {len(audio_data)}, 采样率: {self.config.sample_rate})")
+            return str(filepath)
+
+        except Exception as e:
+            logger.error(f"音频保存失败: {e}")
+            return None
 
     @property
     def model_info(self) -> Optional[ModelInfo]:

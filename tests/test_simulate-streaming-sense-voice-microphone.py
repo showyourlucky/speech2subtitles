@@ -54,19 +54,20 @@ def get_args():
     parser.add_argument(
         "--silero-vad-model",
         type=str,
-        required=True,
+        default="models/silero_vad/silero_vad.onnx",
         help="Path to silero_vad.onnx",
     )
 
     parser.add_argument(
         "--tokens",
         type=str,
+        default="models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt",
         help="Path to tokens.txt",
     )
 
     parser.add_argument(
         "--sense-voice",
-        default="",
+        default="models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx",
         type=str,
         help="Path to the model.onnx from SenseVoice",
     )

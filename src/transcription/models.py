@@ -97,6 +97,12 @@ class TranscriptionConfig:
     blank_penalty: float = 0.0
     temperature: float = 1.0
 
+    # 音频保存配置
+    enable_audio_save: bool = False                    # 是否启用音频保存
+    audio_save_dir: str = "saved_audio"               # 音频保存目录
+    audio_save_format: str = "wav"                    # 音频保存格式 (wav/flac/ogg)
+    audio_save_successful_only: bool = True           # 仅保存成功转录的音频
+
     def validate(self) -> bool:
         """
         验证转录配置的有效性
@@ -121,6 +127,9 @@ class TranscriptionConfig:
         if self.beam_size <= 0:
             return False
         if self.max_active_paths <= 0:
+            return False
+        # 验证音频保存格式
+        if self.audio_save_format.lower() not in ['wav', 'flac', 'ogg']:
             return False
         return True
 

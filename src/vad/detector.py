@@ -201,7 +201,7 @@ class SherpaOnnxVAD:
         self._callback_lock = threading.Lock()
 
         # 音频缓冲区
-        self._audio_buffer = deque(maxlen=self.config.sample_rate * 2)
+        self._audio_buffer = deque(maxlen=self.config.sample_rate * 3)
         self._buffer_lock = threading.Lock()
 
         self._load_model()
@@ -344,14 +344,14 @@ class SherpaOnnxVAD:
             # 检查是否有新的语音段被检测到
             is_speech = False
             confidence = self.config.threshold
-
+            real_data = None
             if not self._vad_model.empty():
                 # 获取检测结果
                 segment = self._vad_model.front
                 # 判断是否为语音段
                 is_speech = len(segment.samples) > 0
+                real_data = self._vad_model.front.samples
                 self._vad_model.pop()  # 移除已处理的段
-
                 # 尝试获取更准确的置信度
                 confidence = self._get_confidence_score(is_speech)
 
@@ -364,6 +364,7 @@ class SherpaOnnxVAD:
 
             if is_speech:
                 self._statistics.update_speech_duration(duration_ms)
+                result.audio_data = real_data
             else:
                 self._statistics.update_silence_duration(duration_ms)
 
@@ -388,13 +389,6 @@ class SherpaOnnxVAD:
         Returns:
             float: 置信度分数
         """
-        try:
-            # 尝试从sherpa-onnx模型获取实际置信度（如果支持）
-            # 注意：这取决于sherpa-onnx的具体API实现
-            if hasattr(self._vad_model, 'get_probability'):
-                return self._vad_model.get_probability()
-        except:
-            pass
 
         # 回退到基于阈值的估算
         base_score = self.config.threshold
@@ -479,7 +473,7 @@ class SherpaOnnxVAD:
                     buffer_audio = np.array(list(self._audio_buffer), dtype=np.float32)
                 if len(buffer_audio) > 0:
                     # 只取最近的一秒音频作为前置缓冲
-                    max_buffer_samples = self.config.sample_rate  # 1秒
+                    max_buffer_samples = self.config.sample_rate * 2 # 1秒
                     if len(buffer_audio) > max_buffer_samples:
                         buffer_audio = buffer_audio[-max_buffer_samples:]
                     result_audio_data = buffer_audio
