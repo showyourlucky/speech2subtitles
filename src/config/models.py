@@ -45,13 +45,19 @@ class OutputConstants:
     DEFAULT_FORMAT: str = "text"
 
 
+class SubtitleConstants:
+    """字幕相关常量"""
+    SUPPORTED_FORMATS: List[str] = ["srt", "vtt", "ass"]
+    DEFAULT_FORMAT: str = "srt"
+
+
 @dataclass
 class Config:
     """系统配置数据类"""
 
     # 核心配置
     model_path: str                                          # sense-voice模型文件路径
-    input_source: str                                        # "microphone" 或 "system"
+    input_source: Optional[str] = None                       # "microphone" 或 "system" (与input_file互斥)
 
     # 可选配置
     use_gpu: bool = True                                     # 是否使用GPU加速
@@ -72,6 +78,13 @@ class Config:
     show_confidence: bool = True                             # 显示置信度
     show_timestamp: bool = True                              # 显示时间戳
 
+    # 媒体文件转字幕配置 (新增)
+    input_file: Optional[List[str]] = None                   # 输入文件/文件列表/目录路径
+    output_dir: Optional[str] = None                         # 字幕输出目录
+    subtitle_format: str = SubtitleConstants.DEFAULT_FORMAT  # 字幕格式 (srt/vtt/ass)
+    keep_temp: bool = False                                  # 保留临时音频文件
+    verbose: bool = False                                    # 显示详细日志
+
     def validate(self) -> None:
         """验证配置的有效性"""
 
@@ -86,12 +99,36 @@ class Config:
                 f"支持的格式: {ModelConstants.SUPPORTED_EXTENSIONS}"
             )
 
-        # 验证输入源
-        if self.input_source not in ModelConstants.SUPPORTED_INPUT_SOURCES:
+        # 验证输入源 - input_source和input_file至少提供一个
+        if self.input_source is None and self.input_file is None:
             raise ValueError(
-                f"不支持的输入源: {self.input_source}，"
-                f"支持的输入源: {ModelConstants.SUPPORTED_INPUT_SOURCES}"
+                "必须提供 --input-source (实时音频) 或 --input-file (离线文件) 之一"
             )
+
+        # 验证输入源互斥
+        if self.input_source is not None and self.input_file is not None:
+            raise ValueError(
+                "--input-source 和 --input-file 不能同时使用，"
+                "请选择实时转录模式或离线文件模式"
+            )
+
+        # 验证实时音频输入源
+        if self.input_source is not None:
+            if self.input_source not in ModelConstants.SUPPORTED_INPUT_SOURCES:
+                raise ValueError(
+                    f"不支持的输入源: {self.input_source}，"
+                    f"支持的输入源: {ModelConstants.SUPPORTED_INPUT_SOURCES}"
+                )
+
+        # 验证离线文件输入
+        if self.input_file is not None:
+            if not isinstance(self.input_file, list):
+                self.input_file = [self.input_file]
+
+            for file_path in self.input_file:
+                path = Path(file_path)
+                if not path.exists():
+                    raise ValueError(f"输入文件/目录不存在: {file_path}")
 
         # 验证VAD敏感度
         if not VadConstants.MIN_SENSITIVITY <= self.vad_sensitivity <= VadConstants.MAX_SENSITIVITY:
@@ -135,9 +172,25 @@ class Config:
                 f"支持的格式: {OutputConstants.SUPPORTED_FORMATS}"
             )
 
+        # 验证字幕格式
+        if self.subtitle_format not in SubtitleConstants.SUPPORTED_FORMATS:
+            raise ValueError(
+                f"不支持的字幕格式: {self.subtitle_format}，"
+                f"支持的格式: {SubtitleConstants.SUPPORTED_FORMATS}"
+            )
+
     def __post_init__(self):
         """初始化后验证"""
-        self.validate()
+        # 注意: 在配置未完全加载前不验证,由ConfigManager调用validate()
+        pass
+
+    def is_realtime_mode(self) -> bool:
+        """判断是否为实时转录模式"""
+        return self.input_source is not None
+
+    def is_file_mode(self) -> bool:
+        """判断是否为离线文件模式"""
+        return self.input_file is not None
 
 
 @dataclass

@@ -357,6 +357,7 @@ class TranscriptionEngine:
                 num_threads=2,
                 use_itn=True,
                 debug=False,
+                # provider='cuda' if self.config.use_gpu else 'cpu'
                 # hr_dict_dir=args.hr_dict_dir,
                 # hr_rule_fsts=args.hr_rule_fsts,
                 # hr_lexicon=args.hr_lexicon,

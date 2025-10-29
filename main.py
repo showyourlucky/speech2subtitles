@@ -191,7 +191,7 @@ def add_pipeline_event_handlers(pipeline: TranscriptionPipeline) -> None:
     pipeline.add_error_callback(error_callback)
 
 
-def print_usage_instructions():
+def print_usage_instructions(config):
     """
     打印使用说明和注意事项
 
@@ -200,9 +200,14 @@ def print_usage_instructions():
     - 音频源类型说明
     - 模型要求
     - 权限要求
+
+    Args:
+        config: 配置对象,用于判断运行模式
     """
-    instructions = """
-使用说明:
+    if config.is_realtime_mode():
+        # 实时转录模式说明
+        instructions = """
+使用说明 - 实时转录模式:
   - 程序将开始实时音频捕获和转录
   - 转录结果将实时显示在控制台
   - 按 Ctrl+C 停止程序
@@ -213,17 +218,207 @@ def print_usage_instructions():
   - microphone: 从默认麦克风捕获音频
   - system: 从系统音频输出捕获音频（如播放器、浏览器等）
 
+注意事项:
+  - 首次运行可能需要下载VAD模型
+  - 确保网络连接正常以下载VAD模型
+  - Windows用户可能需要启用"立体声混音"使用系统音频捕获
+"""
+    else:
+        # 离线文件模式说明
+        instructions = """
+使用说明 - 离线文件转字幕模式:
+  - 程序将处理指定的媒体文件并生成字幕
+  - 支持的格式: mp4, avi, mkv, mp3, wav 等
+  - 字幕文件将保存在指定的输出目录
+  - 处理进度将实时显示
+
+支持的格式:
+  视频: avi, flv, mkv, mov, mp4, mpeg, webm, wmv
+  音频: aac, amr, flac, m4a, mp3, ogg, opus, wav, wma
+
+注意事项:
+  - 确保FFmpeg已正确安装并添加到系统PATH
+  - 临时文件将保存在temp/目录下
+  - 处理大文件时请确保有足够的磁盘空间
+"""
+
+    common_info = """
 模型要求:
   - 支持 .onnx 和 .bin 格式的 sense-voice 模型
   - 推荐使用GPU加速以获得更好性能
   - VAD模型将自动下载（silero_vad）
-
-注意事项:
-  - 首次运行可能需要下载模型文件
-  - 确保网络连接正常以下载VAD模型
-  - Windows用户可能需要启用"立体声混音"使用系统音频捕获
 """
     print(instructions)
+    print(common_info)
+
+
+def run_realtime_transcription(config):
+    """
+    运行实时音频转录模式
+
+    Args:
+        config: 配置对象
+
+    Note:
+        使用TranscriptionPipeline进行实时音频捕获和转录
+    """
+    logger = logging.getLogger(__name__)
+
+    # 创建和配置转录流水线
+    print("\n[初始化] 创建转录流水线...")
+    pipeline = TranscriptionPipeline(config)
+    add_pipeline_event_handlers(pipeline)
+
+    # 运行流水线
+    print("\n[启动] 开始实时语音转录...")
+    print("按 Ctrl+C 停止程序\n")
+
+    # 使用上下文管理器确保资源正确清理
+    with pipeline:
+        pipeline.run()
+
+
+def run_file_transcription(config):
+    """
+    运行离线文件转字幕模式
+
+    Args:
+        config: 配置对象
+
+    Note:
+        使用媒体处理模块进行批量文件转录和字幕生成
+    """
+    from pathlib import Path
+    from src.media import MediaConverter, SubtitleGenerator, BatchProcessor
+
+    logger = logging.getLogger(__name__)
+
+    # 步骤1: 检查FFmpeg环境
+    print("\n[环境检查] 检测FFmpeg...")
+    try:
+        MediaConverter.ensure_ffmpeg()
+        print("  ✓ FFmpeg已就绪")
+    except Exception as e:
+        print(f"  ✗ FFmpeg检查失败: {e}")
+        sys.exit(1)
+
+    # 步骤2: 初始化媒体处理组件
+    print("\n[初始化] 创建媒体处理器...")
+    converter = MediaConverter(temp_dir="temp")
+    subtitle_gen = SubtitleGenerator(encoding='utf-8')
+    processor = BatchProcessor(converter, subtitle_gen)
+    print("  ✓ 媒体处理器初始化完成")
+
+    # 步骤3: 初始化转录引擎和VAD
+    from src.transcription.engine import TranscriptionEngine
+    from src.transcription.models import TranscriptionConfig, TranscriptionModel, LanguageCode
+    from src.vad.detector import VoiceActivityDetector
+    from src.vad.models import VadConfig, VadModel
+
+    print("\n[初始化] 加载转录引擎...")
+
+    # 创建转录引擎配置
+    transcription_config = TranscriptionConfig(
+        model=TranscriptionModel.SENSE_VOICE,
+        model_path=config.model_path,
+        language=LanguageCode.AUTO,
+        sample_rate=16000,
+        use_gpu=not config.no_gpu if hasattr(config, 'no_gpu') else True
+    )
+
+    # 初始化转录引擎
+    try:
+        engine = TranscriptionEngine(transcription_config)
+        print("  ✓ 转录引擎初始化成功")
+    except Exception as e:
+        print(f"  ✗ 转录引擎初始化失败: {e}")
+        sys.exit(1)
+
+    # 创建VAD配置
+    vad_config = VadConfig(
+        model=VadModel.SILERO,
+        threshold=0.2,
+        sample_rate=16000,
+        min_speech_duration_ms=250,
+        min_silence_duration_ms=250,
+        max_speech_duration_ms=5000,  # 5秒最大语音段
+        use_sherpa_onnx=True  # 优先使用sherpa-onnx
+    )
+
+    # 初始化VAD检测器
+    try:
+        vad = VoiceActivityDetector(vad_config)
+        print("  ✓ VAD检测器初始化成功")
+    except Exception as e:
+        print(f"  ✗ VAD检测器初始化失败: {e}")
+        sys.exit(1)
+
+    # 步骤4: 处理输入文件
+    input_paths = []
+    for file_str in config.input_file:
+        path = Path(file_str)
+        if path.is_dir():
+            # 目录模式
+            input_paths.append(('dir', path))
+        else:
+            # 文件模式
+            input_paths.append(('file', path))
+
+    # 确定输出目录
+    output_dir = Path(config.output_dir) if config.output_dir else None
+
+    print(f"\n[开始处理] 共 {len(input_paths)} 个输入")
+
+    # 步骤5: 批量处理
+    for input_type, input_path in input_paths:
+        try:
+            if input_type == 'file':
+                # 处理单个文件
+                print(f"\n处理文件: {input_path.name}")
+                result = processor.process_file(
+                    file_path=input_path,
+                    transcription_engine=engine,
+                    vad_detector=vad,
+                    output_dir=output_dir,
+                    subtitle_format=config.subtitle_format,
+                    keep_temp=config.keep_temp,
+                    verbose=config.verbose
+                )
+
+                if result['success']:
+                    print(f"  ✓ 成功: {result['subtitle_file']}")
+                else:
+                    print(f"  ✗ 失败: {result['error']}")
+
+            elif input_type == 'dir':
+                # 处理目录
+                print(f"\n处理目录: {input_path}")
+                stats = processor.process_directory(
+                    dir_path=input_path,
+                    transcription_engine=engine,
+                    vad_detector=vad,
+                    output_dir=output_dir,
+                    subtitle_format=config.subtitle_format,
+                    recursive=False,
+                    keep_temp=config.keep_temp,
+                    verbose=config.verbose
+                )
+
+                print(f"\n目录处理完成:")
+                print(f"  总文件: {stats['total_files']}")
+                print(f"  成功: {stats['success_count']}")
+                print(f"  失败: {stats['error_count']}")
+
+        except Exception as e:
+            logger.error(f"处理失败: {input_path}, 错误: {e}")
+            print(f"  ✗ 异常: {e}")
+            continue
+
+    # 步骤6: 清理临时文件 (如果不保留)
+    if not config.keep_temp:
+        print("\n[清理] 删除临时文件...")
+        count = converter.cleanup_all_temp_files()
+        print(f"  ✓ 已清理 {count} 个临时文件")
 
 
 def validate_runtime_environment() -> bool:
@@ -341,20 +536,18 @@ def main():
         print("="*60)
 
         # 步骤8: 打印使用说明
-        print_usage_instructions()
+        print_usage_instructions(config)
 
-        # 步骤9: 创建和配置转录流水线
-        print("\n[初始化] 创建转录流水线...")
-        pipeline = TranscriptionPipeline(config)
-        add_pipeline_event_handlers(pipeline)
-
-        # 步骤10: 运行流水线
-        print("\n[启动] 开始实时语音转录...")
-        print("按 Ctrl+C 停止程序\n")
-
-        # 使用上下文管理器确保资源正确清理
-        with pipeline:
-            pipeline.run()
+        # 步骤9: 根据模式选择执行路径
+        if config.is_realtime_mode():
+            # 实时转录模式
+            run_realtime_transcription(config)
+        elif config.is_file_mode():
+            # 离线文件转字幕模式
+            run_file_transcription(config)
+        else:
+            print("\n[ERROR] 未知的运行模式")
+            sys.exit(1)
 
         print("\n[完成] 程序正常退出")
 

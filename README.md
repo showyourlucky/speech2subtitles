@@ -15,10 +15,11 @@
 ## 📋 系统要求
 
 ### 基础要求
-- **操作系统**：Windows 10/11
-- **Python版本**：3.8 或更高
+- **操作系统**：Windows 10/11, Linux, macOS
+- **Python版本**：3.10 或更高
 - **内存**：推荐 8GB 以上
 - **存储空间**：至少 2GB 可用空间
+- **FFmpeg**：用于媒体文件转换（离线字幕生成模式必需）
 
 ### 硬件要求
 - **CPU**：现代多核处理器
@@ -27,7 +28,68 @@
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1. 安装FFmpeg (媒体文件转字幕功能必需)
+
+Speech2Subtitles使用FFmpeg进行媒体格式转换。请根据您的操作系统安装FFmpeg:
+
+#### Windows
+
+**方法1: 使用包管理器 (推荐)**
+```bash
+# 使用 Chocolatey
+choco install ffmpeg
+
+# 或使用 Scoop
+scoop install ffmpeg
+```
+
+**方法2: 手动安装**
+1. 访问 https://www.gyan.dev/ffmpeg/builds/
+2. 下载 "ffmpeg-release-essentials.zip"
+3. 解压到 `C:\ffmpeg\`
+4. 添加 `C:\ffmpeg\bin` 到系统PATH环境变量:
+   - 右键"此电脑" → 属性 → 高级系统设置
+   - 环境变量 → 系统变量 → Path → 编辑
+   - 新建 → 输入 `C:\ffmpeg\bin` → 确定
+5. 验证安装:
+   ```cmd
+   ffmpeg -version
+   ```
+
+#### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update
+sudo apt install ffmpeg
+
+# 验证安装
+ffmpeg -version
+```
+
+#### macOS
+
+```bash
+# 使用 Homebrew
+brew install ffmpeg
+
+# 验证安装
+ffmpeg -version
+```
+
+#### 验证FFmpeg安装
+
+运行以下命令确认FFmpeg已正确安装:
+```bash
+ffmpeg -version
+```
+
+应该看到FFmpeg的版本信息,例如:
+```
+ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers
+...
+```
+
+### 2. 安装Python依赖
 
 #### 使用 uv（推荐）
 ```bash
@@ -59,7 +121,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. 准备模型文件
+### 3. 准备模型文件
 
 下载 sense-voice 模型文件：
 - 支持 `.onnx` 和 `.bin` 格式
@@ -74,32 +136,57 @@ mkdir models
 # wget -O models/sense-voice.onnx <model-download-url>
 ```
 
-### 3. 运行系统
+### 4. 运行系统
 
-#### 基本用法
+#### 模式1: 实时音频转录
+
+**基本用法**
 ```bash
 # 激活虚拟环境（如果使用uv）
 .venv\Scripts\activate
 
-# 运行转录系统
+# 麦克风输入
 python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
+
+# 系统音频输入
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
 ```
 
-#### 完整参数示例
-```bash
-# 使用麦克风输入，启用GPU加速
-python main.py \
-    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
-    --input-source microphone \
-    --vad-sensitivity 0.7 \
-    --use-gpu
+#### 模式2: 媒体文件转字幕 (新功能)
 
-# 使用系统音频输入，CPU处理
+**基本用法**
+```bash
+# 单个文件
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video.mp4
+
+# 多个文件
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video1.mp4 audio1.mp3 lecture.avi
+
+# 处理目录
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file ./videos/
+```
+
+**高级用法**
+```bash
+# 指定输出目录和字幕格式
 python main.py \
     --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
-    --input-source system \
+    --input-file video.mp4 \
+    --output-dir ./subtitles/ \
+    --subtitle-format srt \
+    --verbose
+
+# 保留临时文件用于调试
+python main.py \
+    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
+    --input-file video.mp4 \
+    --keep-temp \
     --no-gpu
 ```
+
+**支持的媒体格式**
+- **视频**: avi, flv, mkv, mov, mp4, mpeg, webm, wmv
+- **音频**: aac, amr, flac, m4a, mp3, ogg, opus, wav, wma
 
 ## 📖 详细使用指南
 
@@ -107,13 +194,27 @@ python main.py \
 
 #### 必需参数
 - `--model-path`：sense-voice模型文件路径
-- `--input-source`：音频输入源（`microphone` 或 `system`）
+- `--input-source` 或 `--input-file`：选择运行模式（二选一）
+  - `--input-source`：实时音频转录（`microphone` 或 `system`）
+  - `--input-file`：离线文件转字幕（文件/目录路径）
 
-#### 可选参数
+#### 实时转录可选参数
 - `--vad-sensitivity`：VAD敏感度（0.0-1.0，默认0.5）
-- `--use-gpu` / `--no-gpu`：启用/禁用GPU加速
-- `--output-format`：输出格式配置
-- `--log-level`：日志级别（DEBUG, INFO, WARNING, ERROR）
+- `--output-format`：输出格式（text/json，默认text）
+- `--device-id`：指定音频设备ID
+- `--no-confidence`：不显示置信度
+- `--no-timestamp`：不显示时间戳
+
+#### 离线字幕生成可选参数
+- `--output-dir`：字幕输出目录（默认与输入文件同目录）
+- `--subtitle-format`：字幕格式（srt/vtt/ass，默认srt）
+- `--keep-temp`：保留临时音频文件
+- `--verbose`：显示详细处理过程
+
+#### 通用可选参数
+- `--no-gpu`：禁用GPU加速
+- `--sample-rate`：采样率（默认16000Hz）
+- `--vad-threshold`：VAD阈值（默认0.5）
 - `--help`：显示帮助信息
 
 ### 音频输入源说明

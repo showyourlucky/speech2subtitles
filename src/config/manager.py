@@ -27,14 +27,18 @@ class ConfigManager:
             description="实时语音转录系统 - 基于sherpa-onnx和silero_vad的高性能语音识别",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
-使用示例:
+使用示例 - 实时转录:
   %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
   %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.7
 
-支持的输入源:
-  microphone    从麦克风捕获音频
-  system        从系统音频输出捕获音频 (如浏览器、播放器等)
+使用示例 - 媒体文件转字幕:
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video.mp4
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video1.mp4 audio1.mp3 --output-dir subtitles/
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file videos/ --subtitle-format srt
+
+支持的输入模式:
+  实时转录:     --input-source (microphone/system)
+  离线文件:     --input-file (单文件/多文件/目录)
 
 模型要求:
   支持 .onnx 和 .bin 格式的sense-voice模型文件
@@ -49,12 +53,21 @@ class ConfigManager:
             required=True,
             help="sense-voice模型文件路径 (.onnx 或 .bin)"
         )
-        required.add_argument(
+
+        # 输入模式 - 互斥组
+        input_group = parser.add_mutually_exclusive_group(required=True)
+        input_group.add_argument(
             "--input-source",
             type=str,
-            required=True,
             choices=["microphone", "system"],
-            help="音频输入源: microphone(麦克风) 或 system(系统音频)"
+            help="实时音频输入源: microphone(麦克风) 或 system(系统音频)"
+        )
+        input_group.add_argument(
+            "--input-file",
+            type=str,
+            nargs='+',
+            metavar="FILE",
+            help="离线文件输入: 单个文件、多个文件或目录路径"
         )
 
         # 可选参数
@@ -119,7 +132,7 @@ class ConfigManager:
             type=str,
             default="text",
             choices=["text", "json"],
-            help="输出格式 (默认: text)"
+            help="实时转录输出格式 (默认: text)"
         )
         output.add_argument(
             "--no-confidence",
@@ -130,6 +143,32 @@ class ConfigManager:
             "--no-timestamp",
             action="store_true",
             help="不显示时间戳信息"
+        )
+
+        # 字幕生成参数 (离线文件模式)
+        subtitle = parser.add_argument_group("字幕生成参数 (--input-file模式)")
+        subtitle.add_argument(
+            "--output-dir",
+            type=str,
+            metavar="DIR",
+            help="字幕输出目录 (默认: 与输入文件同目录)"
+        )
+        subtitle.add_argument(
+            "--subtitle-format",
+            type=str,
+            default="srt",
+            choices=["srt", "vtt", "ass"],
+            help="字幕格式 (默认: srt)"
+        )
+        subtitle.add_argument(
+            "--keep-temp",
+            action="store_true",
+            help="保留临时音频文件 (用于调试)"
+        )
+        subtitle.add_argument(
+            "--verbose",
+            action="store_true",
+            help="显示详细处理过程"
         )
 
         return parser
@@ -165,7 +204,16 @@ class ConfigManager:
                 vad_threshold=parsed_args.vad_threshold,
                 show_confidence=not parsed_args.no_confidence,
                 show_timestamp=not parsed_args.no_timestamp,
+                # 媒体文件转字幕参数
+                input_file=parsed_args.input_file if hasattr(parsed_args, 'input_file') else None,
+                output_dir=parsed_args.output_dir if hasattr(parsed_args, 'output_dir') else None,
+                subtitle_format=parsed_args.subtitle_format if hasattr(parsed_args, 'subtitle_format') else "srt",
+                keep_temp=parsed_args.keep_temp if hasattr(parsed_args, 'keep_temp') else False,
+                verbose=parsed_args.verbose if hasattr(parsed_args, 'verbose') else False,
             )
+
+            # 手动验证配置 (因为__post_init__不再自动验证)
+            config.validate()
 
             return config
 
@@ -231,13 +279,29 @@ class ConfigManager:
         """
         print("当前配置:")
         print(f"  模型路径: {config.model_path}")
-        print(f"  输入源: {config.input_source}")
+
+        # 判断运行模式
+        if config.is_realtime_mode():
+            print(f"  运行模式: 实时转录")
+            print(f"  输入源: {config.input_source}")
+            if config.device_id is not None:
+                print(f"  音频设备ID: {config.device_id}")
+            print(f"  输出格式: {config.output_format}")
+            print(f"  显示置信度: {'是' if config.show_confidence else '否'}")
+            print(f"  显示时间戳: {'是' if config.show_timestamp else '否'}")
+        elif config.is_file_mode():
+            print(f"  运行模式: 离线文件转字幕")
+            print(f"  输入文件: {len(config.input_file)}个文件/目录")
+            for f in config.input_file[:3]:  # 最多显示3个
+                print(f"    - {f}")
+            if len(config.input_file) > 3:
+                print(f"    ... 还有 {len(config.input_file) - 3} 个文件")
+            print(f"  输出目录: {config.output_dir or '(与输入同目录)'}")
+            print(f"  字幕格式: {config.subtitle_format.upper()}")
+            print(f"  保留临时文件: {'是' if config.keep_temp else '否'}")
+            print(f"  详细模式: {'是' if config.verbose else '否'}")
+
         print(f"  GPU加速: {'启用' if config.use_gpu else '禁用'}")
         print(f"  VAD敏感度: {config.vad_sensitivity}")
         print(f"  采样率: {config.sample_rate}Hz")
         print(f"  音频块大小: {config.chunk_size}")
-        print(f"  输出格式: {config.output_format}")
-        if config.device_id is not None:
-            print(f"  音频设备ID: {config.device_id}")
-        print(f"  显示置信度: {'是' if config.show_confidence else '否'}")
-        print(f"  显示时间戳: {'是' if config.show_timestamp else '否'}")
