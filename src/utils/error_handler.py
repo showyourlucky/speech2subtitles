@@ -144,6 +144,18 @@ class TranscriptionError(SpeechTranscriptionError):
         )
 
 
+class ComponentInitializationError(SpeechTranscriptionError):
+    """组件初始化错误"""
+    def __init__(self, message: str, recovery_suggestion: Optional[str] = None):
+        super().__init__(
+            message,
+            severity=ErrorSeverity.HIGH,
+            category=ErrorCategory.SYSTEM,
+            recovery_suggestion=recovery_suggestion,
+            is_recoverable=True
+        )
+
+
 class ErrorHandler:
     """统一错误处理器"""
 

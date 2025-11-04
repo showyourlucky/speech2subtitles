@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .models import Config
+from .models import Config, SubtitleDisplayConfig
 
 
 class ConfigManager:
@@ -171,6 +171,63 @@ class ConfigManager:
             help="显示详细处理过程"
         )
 
+        # 字幕显示参数 (实时转录模式)
+        subtitle_display = parser.add_argument_group("字幕显示参数 (--input-source模式)")
+        subtitle_display.add_argument(
+            "--show-subtitles",
+            action="store_true",
+            help="启用屏幕字幕显示 (仅在--input-source模式下有效)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-position",
+            type=str,
+            choices=["top", "center", "bottom"],
+            default="bottom",
+            help="字幕位置: top(顶部)/center(居中)/bottom(底部) (默认: bottom)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-font-size",
+            type=int,
+            default=24,
+            metavar="INT",
+            help="字幕字体大小 (默认: 24)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-font-family",
+            type=str,
+            default="Microsoft YaHei",
+            metavar="FONT",
+            help="字幕字体 (默认: Microsoft YaHei)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-opacity",
+            type=float,
+            default=0.8,
+            metavar="FLOAT",
+            help="字幕窗口透明度 (0.1-1.0, 默认: 0.8)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-max-display-time",
+            type=float,
+            default=5.0,
+            metavar="FLOAT",
+            help="字幕最大显示时间，单位秒 (默认: 5.0)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-text-color",
+            type=str,
+            default="#FFFFFF",
+            metavar="COLOR",
+            help="字幕文字颜色 (十六进制格式, 默认: #FFFFFF)"
+        )
+        subtitle_display.add_argument(
+            "--subtitle-bg-color",
+            type=str,
+            default="#000000",
+            metavar="COLOR",
+            help="字幕背景颜色 (十六进制格式, 默认: #000000)"
+        )
+
         return parser
 
     def parse_arguments(self, args: Optional[list] = None) -> Config:
@@ -210,6 +267,17 @@ class ConfigManager:
                 subtitle_format=parsed_args.subtitle_format if hasattr(parsed_args, 'subtitle_format') else "srt",
                 keep_temp=parsed_args.keep_temp if hasattr(parsed_args, 'keep_temp') else False,
                 verbose=parsed_args.verbose if hasattr(parsed_args, 'verbose') else False,
+                # 字幕显示参数
+                subtitle_display=SubtitleDisplayConfig(
+                    enabled=getattr(parsed_args, 'show_subtitles', False),
+                    position=getattr(parsed_args, 'subtitle_position', 'bottom'),
+                    font_size=getattr(parsed_args, 'subtitle_font_size', 24),
+                    font_family=getattr(parsed_args, 'subtitle_font_family', 'Microsoft YaHei'),
+                    opacity=getattr(parsed_args, 'subtitle_opacity', 0.8),
+                    max_display_time=getattr(parsed_args, 'subtitle_max_display_time', 5.0),
+                    text_color=getattr(parsed_args, 'subtitle_text_color', '#FFFFFF'),
+                    background_color=getattr(parsed_args, 'subtitle_bg_color', '#000000')
+                ),
             )
 
             # 手动验证配置 (因为__post_init__不再自动验证)
@@ -289,6 +357,17 @@ class ConfigManager:
             print(f"  输出格式: {config.output_format}")
             print(f"  显示置信度: {'是' if config.show_confidence else '否'}")
             print(f"  显示时间戳: {'是' if config.show_timestamp else '否'}")
+
+            # 字幕显示配置
+            if config.subtitle_display.enabled:
+                print(f"  屏幕字幕显示: 启用")
+                print(f"    字幕位置: {config.subtitle_display.position}")
+                print(f"    字体大小: {config.subtitle_display.font_size}px")
+                print(f"    字体: {config.subtitle_display.font_family}")
+                print(f"    透明度: {config.subtitle_display.opacity}")
+                print(f"    最大显示时间: {config.subtitle_display.max_display_time}秒")
+            else:
+                print(f"  屏幕字幕显示: 禁用")
         elif config.is_file_mode():
             print(f"  运行模式: 离线文件转字幕")
             print(f"  输入文件: {len(config.input_file)}个文件/目录")

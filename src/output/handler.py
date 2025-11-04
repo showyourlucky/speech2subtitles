@@ -2,7 +2,126 @@
 语音转录结果输出处理器
 
 负责处理、格式化和显示语音转录结果，支持多种输出格式、实时更新和用户友好的展示方式。
-提供控制台彩色输出、JSON格式化、字幕文件生成等功能。
+提供控制台彩色输出、JSON格式化、字幕文件生成、实时屏幕字幕显示等功能。
+
+字幕显示功能使用示例：
+=====================
+
+1. 启用字幕显示的基本用法：
+   ```python
+   from src.output.handler import OutputHandler
+   from src.config.models import SubtitleDisplayConfig
+
+   # 创建字幕显示配置
+   subtitle_config = SubtitleDisplayConfig(
+       enabled=True,                    # 启用字幕显示
+       position="bottom",              # 字幕位置：top/center/bottom
+       font_size=24,                   # 字体大小
+       font_family="Microsoft YaHei",  # 字体
+       opacity=0.8,                    # 透明度 (0.1-1.0)
+       max_display_time=5.0,           # 最大显示时间(秒)
+       text_color="#FFFFFF",           # 文字颜色
+       background_color="#000000"      # 背景颜色
+   )
+
+   # 创建输出处理器
+   handler = OutputHandler(subtitle_display_config=subtitle_config)
+   handler.start()
+   ```
+
+2. 完整的命令行使用示例：
+   ```bash
+   # 基本字幕显示
+   python main.py --model-path models/sense-voice.onnx --input-source microphone --show-subtitles
+
+   # 自定义字幕显示参数
+   python main.py \
+       --model-path models/sense-voice.onnx \
+       --input-source microphone \
+       --show-subtitles \
+       --subtitle-position bottom \
+       --subtitle-font-size 24 \
+       --subtitle-font-family "Microsoft YaHei" \
+       --subtitle-opacity 0.9 \
+       --subtitle-max-display-time 4.0
+
+   # 字幕显示在屏幕顶部，字体更大
+   python main.py \
+       --model-path models/sense-voice.onnx \
+       --input-source microphone \
+       --show-subtitles \
+       --subtitle-position top \
+       --subtitle-font-size 32 \
+       --subtitle-opacity 0.85
+   ```
+
+3. 编程方式使用字幕显示：
+   ```python
+   from src.output.handler import OutputHandler
+   from src.output.models import OutputConfig, OutputFormat
+   from src.config.models import SubtitleDisplayConfig
+   from src.transcription.models import TranscriptionResult
+
+   # 配置输出处理器
+   output_config = OutputConfig(
+       format=OutputFormat.CONSOLE,
+       show_confidence=True,
+       show_timestamps=True,
+       real_time_update=True
+   )
+
+   # 配置字幕显示
+   subtitle_config = SubtitleDisplayConfig(
+       enabled=True,
+       position="bottom",
+       font_size=28,
+       opacity=0.8
+   )
+
+   # 创建并启动输出处理器
+   handler = OutputHandler(
+       config=output_config,
+       subtitle_display_config=subtitle_config
+   )
+   handler.start()
+
+   # 模拟转录结果
+   result = TranscriptionResult(
+       text="这是实时语音转录的字幕内容",
+       confidence=0.95,
+       is_final=True,
+       timestamp=time.time(),
+       start_time=time.time(),
+       end_time=time.time() + 2.0
+   )
+
+   # 处理结果（这将更新屏幕字幕）
+   handler.process_result(result)
+
+   # 清理资源
+   handler.stop()
+   ```
+
+调试模式：
+```bash
+# 启用详细日志查看字幕显示状态
+python main.py --model-path model.onnx --input-source microphone --show-subtitles --log-level DEBUG
+```
+
+字幕窗口特性：
+==============
+- 支持鼠标拖拽移动位置
+- 半透明背景，不遮挡重要内容
+- 自动文本换行，适应长字幕
+- 根据置信度调整显示内容
+- 自动隐藏机制，避免屏幕杂乱
+
+性能优化：
+==========
+- 字幕更新在独立线程中执行，不阻塞转录
+- 使用高效的GUI更新机制
+- 智能的文本过滤和长度限制
+- 优化的内存管理和资源清理
 """
 
 # 标准库导入
@@ -24,6 +143,16 @@ from .models import (
 )
 from ..transcription.models import TranscriptionResult, BatchTranscriptionResult  # Transcription results
 
+# 字幕显示组件导入 - 优先使用主模块导入，避免复杂的回退逻辑
+try:
+    from ..subtitle_display import SubtitleDisplay
+    SUBTITLE_DISPLAY_AVAILABLE = True
+    logging.debug("字幕显示组件导入成功：使用主模块")
+except ImportError as e:
+    SUBTITLE_DISPLAY_AVAILABLE = False
+    SubtitleDisplay = None
+    logging.debug(f"字幕显示组件导入失败: {e}")
+
 
 class OutputHandler:
     """
@@ -38,39 +167,289 @@ class OutputHandler:
     - 字幕文件生成和导出
     """
 
-    def __init__(self, config: Optional[OutputConfig] = None):
+    def __init__(self, config: Optional[OutputConfig] = None, subtitle_display_config=None):
         """
-        Initialize output handler
+        初始化输出处理器
 
         Args:
-            config: Output configuration, uses defaults if None
+            config: 输出配置对象，如果为None则使用默认配置
+            subtitle_display_config: 字幕显示配置对象（可选）
+
+        Raises:
+            ConfigurationError: 配置验证失败时抛出
+
+        初始化流程：
+            1. 设置输出配置和缓冲区
+            2. 初始化文件处理和队列系统
+            3. 设置控制台颜色代码
+            4. 初始化字幕显示组件（如果启用）
+            5. 验证所有配置的有效性
         """
+        # 第1步：设置基础配置和组件
         self.config = config or OutputConfig()
-        self.metrics = DisplayMetrics()
-        self.buffer = OutputBuffer(max_size=self.config.buffer_size)
-        self.subtitle_entries: List[SubtitleEntry] = []
-        self.subtitle_counter = 1
+        self.subtitle_display_config = subtitle_display_config
+        self.metrics = DisplayMetrics()                    # 显示统计信息
+        self.buffer = OutputBuffer(max_size=self.config.buffer_size)  # 输出缓冲区
+        self.subtitle_entries: List[SubtitleEntry] = []    # 字幕条目列表
+        self.subtitle_counter = 1                         # 字幕条目计数器
 
-        # File handling
-        self.log_file: Optional[TextIO] = None
-        self.output_queue: Queue = Queue()
-        self.is_running = False
-        self.output_thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
+        # 第2步：初始化文件处理和队列系统
+        self.log_file: Optional[TextIO] = None            # 日志文件句柄
+        self.output_queue: Queue = Queue()                # 异步输出队列
+        self.is_running = False                           # 运行状态标志
+        self.output_thread: Optional[threading.Thread] = None  # 输出处理线程
+        self._lock = threading.Lock()                     # 线程安全锁
 
-        # Color codes for console output
+        # 第3步：设置控制台颜色代码
         self.colors = self._init_color_codes()
 
-        # Initialize logging if configured
+        # 第4步：初始化文件日志记录（如果配置启用）
         if self.config.log_to_file:
             self._init_file_logging()
 
-        # Validate configuration
+        # 第5步：初始化字幕显示组件
+        self.subtitle_display = None
+        self._init_subtitle_display()
+
+        # 第6步：验证所有配置的有效性
         if not self.config.validate():
             raise ConfigurationError("Invalid output configuration")
 
+        # 记录初始化完成信息
+        logging.info(f"OutputHandler初始化完成 - 字幕显示: {'启用' if self.subtitle_display else '禁用'}")
+
+    def _init_subtitle_display(self) -> None:
+        """
+        初始化字幕显示组件，包含详细的错误处理和日志记录
+
+        初始化策略：
+            1. 验证字幕显示配置是否存在且启用
+            2. 检查字幕显示模块是否可用
+            3. 验证字幕显示配置的有效性
+            4. 创建字幕显示组件实例
+            5. 处理各种可能的初始化错误
+
+        异常处理：
+            - 配置缺失：跳过字幕显示初始化
+            - 模块不可用：记录警告并跳过
+            - 配置无效：记录错误并跳过
+            - 初始化失败：记录详细错误信息并提供解决建议
+        """
+        # 第1步：检查字幕显示配置是否存在且启用
+        if not self.subtitle_display_config:
+            logging.debug("字幕显示配置未提供，跳过字幕显示初始化")
+            return
+
+        if not self.subtitle_display_config.enabled:
+            logging.debug("字幕显示功能未启用，跳过初始化")
+            return
+
+        # 第2步：检查字幕显示模块是否可用
+        if not SUBTITLE_DISPLAY_AVAILABLE:
+            logging.warning("字幕显示模块不可用，无法启用屏幕字幕显示功能")
+            logging.info("建议：请检查字幕显示模块是否正确安装")
+            return
+
+        # 第3步：验证字幕显示配置的有效性
+        try:
+            self.subtitle_display_config.validate()
+            logging.debug("字幕显示配置验证通过")
+        except Exception as e:
+            logging.error(f"字幕显示配置验证失败: {e}")
+            logging.warning("字幕显示功能将不可用，请检查配置参数")
+            return
+
+        # 第4步：创建字幕显示组件实例
+        try:
+            logging.info("正在初始化字幕显示组件...")
+            logging.debug(f"字幕配置: 位置={self.subtitle_display_config.position}, "
+                         f"字体={self.subtitle_display_config.font_family}, "
+                         f"大小={self.subtitle_display_config.font_size}px, "
+                         f"透明度={self.subtitle_display_config.opacity}")
+
+            # 创建字幕显示组件
+            self.subtitle_display = SubtitleDisplay(self.subtitle_display_config)
+
+            logging.info("字幕显示组件初始化成功")
+            logging.info(f"字幕窗口位置: {self.subtitle_display_config.position}")
+
+        except ImportError as e:
+            logging.error(f"字幕显示组件导入失败: {e}")
+            logging.warning("建议：检查tkinter安装是否完整")
+            self.subtitle_display = None
+
+        except Exception as e:
+            logging.error(f"字幕显示组件初始化失败: {e}")
+            self._handle_subtitle_display_error(e, "初始化")
+            self.subtitle_display = None
+
+    def _handle_subtitle_display_error(self, error: Exception, context: str) -> None:
+        """
+        统一的字幕显示错误处理，提供详细的错误信息和解决建议
+
+        Args:
+            error: 发生的异常对象
+            context: 错误发生的上下文（如"初始化"、"显示字幕"等）
+
+        错误处理策略：
+            - ImportError：提供tkinter安装建议
+            - ComponentInitializationError：提供系统环境检查建议
+            - 其他异常：提供通用故障排除建议
+        """
+        error_msg = f"字幕显示错误 - {context}: {error}"
+        logging.error(error_msg)
+
+        # 根据错误类型提供具体的解决建议
+        error_str = str(error).lower()
+
+        if "tkinter" in error_str or "import" in error_str:
+            logging.warning("可能的解决方案:")
+            logging.warning("  1. 确认系统已安装tkinter (Python自带)")
+            logging.warning("  2. Linux系统可能需要: sudo apt-get install python3-tk")
+            logging.warning("  3. 重新安装Python或检查环境配置")
+
+        elif "display" in error_str or "gui" in error_str:
+            logging.warning("可能的解决方案:")
+            logging.warning("  1. 检查系统是否支持图形界面")
+            logging.warning("  2. 确认当前用户有权限创建窗口")
+            logging.warning("  3. 检查显示器配置和分辨率设置")
+
+        elif "font" in error_str:
+            logging.warning("可能的解决方案:")
+            logging.warning("  1. 确认系统已安装指定字体")
+            logging.warning("  2. 使用系统默认字体，如：Arial, Times New Roman")
+            logging.warning("  3. 检查字体文件权限和路径")
+
+        else:
+            logging.warning("通用解决方案:")
+            logging.warning("  1. 检查系统资源使用情况")
+            logging.warning("  2. 尝试重启应用程序")
+            logging.warning("  3. 如问题持续，请提供详细错误日志")
+
+    def _validate_subtitle_config(self, config) -> bool:
+        """
+        验证字幕显示配置的有效性，包含系统环境检查
+
+        Args:
+            config: 字幕显示配置对象
+
+        Returns:
+            bool: 配置是否有效
+
+        验证内容：
+            1. 配置对象的基本验证
+            2. tkinter可用性检查
+            3. 字体可用性检查
+            4. 显示参数合理性检查
+        """
+        try:
+            # 基本配置验证
+            if not config:
+                logging.debug("字幕显示配置为空")
+                return False
+
+            if not config.enabled:
+                logging.debug("字幕显示功能未启用")
+                return False
+
+            # 调用配置自身的验证方法
+            config.validate()
+
+            # 检查系统环境
+            if not self._check_tkinter_availability():
+                logging.warning("系统不支持tkinter，字幕显示功能不可用")
+                return False
+
+            # 检查字体可用性
+            if not self._check_font_availability(config.font_family):
+                logging.warning(f"字体 {config.font_family} 不可用，使用默认字体")
+                config.font_family = "Arial"
+
+            return True
+
+        except Exception as e:
+            logging.error(f"字幕显示配置验证失败: {e}")
+            return False
+
+    def _check_tkinter_availability(self) -> bool:
+        """
+        检查tkinter是否可用
+
+        Returns:
+            bool: tkinter是否可用
+        """
+        try:
+            import tkinter
+            # 尝试创建一个简单的测试窗口
+            test_root = tkinter.Tk()
+            test_root.withdraw()  # 隐藏测试窗口
+            test_root.destroy()
+            return True
+        except Exception as e:
+            logging.debug(f"tkinter不可用: {e}")
+            return False
+
+    def _check_font_availability(self, font_family: str) -> bool:
+        """
+        检查指定字体是否可用
+
+        Args:
+            font_family: 字体名称
+
+        Returns:
+            bool: 字体是否可用
+        """
+        try:
+            import tkinter.font as tkFont
+            # 尝试创建字体对象来检查可用性
+            test_font = tkFont.Font(family=font_family, size=12)
+            # 获取实际使用的字体名称
+            actual_font = test_font.actual()["family"]
+            return actual_font.lower() == font_family.lower() or actual_font in ["arial", "times", "courier"]
+        except Exception:
+            return False
+
+    def _test_subtitle_display_functionality(self) -> bool:
+        """
+        测试字幕显示功能是否正常工作
+
+        Returns:
+            bool: 字幕显示功能是否正常
+
+        测试流程：
+            1. 检查字幕显示组件是否存在
+            2. 尝试显示测试文本
+            3. 检查窗口是否正确创建
+            4. 清理测试内容
+        """
+        if not self.subtitle_display:
+            return False
+
+        try:
+            # 显示测试文本
+            test_text = "字幕显示测试"
+            self.subtitle_display.show_subtitle(test_text, 1.0)
+
+            # 等待短暂时间让窗口显示
+            import time
+            time.sleep(0.1)
+
+            # 检查窗口是否可见
+            if self.subtitle_display.is_visible():
+                logging.info("字幕显示功能测试通过")
+                # 清除测试文本
+                self.subtitle_display.clear_subtitle()
+                return True
+            else:
+                logging.warning("字幕显示功能测试失败：窗口不可见")
+                return False
+
+        except Exception as e:
+            logging.error(f"字幕显示功能测试失败: {e}")
+            return False
+
     def _init_color_codes(self) -> Dict[str, str]:
-        """Initialize console color codes based on scheme"""
+        """根据颜色方案初始化控制台颜色代码"""
         if not self.config.uses_color:
             return {key: "" for key in ['reset', 'final', 'partial', 'timestamp', 'confidence', 'error', 'info']}
 
@@ -116,25 +495,117 @@ class OutputHandler:
             raise FileOutputError(f"Failed to initialize log file: {e}")
 
     def start(self) -> None:
-        """Start the output handler"""
+        """
+        启动输出处理器和相关组件
+
+        启动流程：
+            1. 检查是否已经在运行状态，避免重复启动
+            2. 设置运行状态标志
+            3. 启动字幕显示组件（如果已初始化）
+            4. 启动异步输出处理线程（如果配置了实时更新）
+
+        异常处理：
+            - 字幕显示启动失败：记录错误但不影响主要功能
+            - 输出线程启动失败：使用同步模式作为降级方案
+        """
+        # 第1步：检查是否已经在运行状态
         if self.is_running:
+            logging.debug("OutputHandler已经在运行状态，跳过启动")
             return
 
+        # 第2步：设置运行状态标志
         self.is_running = True
+        logging.info("正在启动OutputHandler...")
+
+        # 第3步：启动字幕显示组件
+        if self.subtitle_display:
+            try:
+                logging.debug("正在启动字幕显示组件...")
+                self.subtitle_display.start()
+                logging.info("字幕显示组件已启动")
+
+                # 可选：执行功能测试
+                if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                    self._test_subtitle_display_functionality()
+
+            except Exception as e:
+                logging.error(f"启动字幕显示组件失败: {e}")
+                self._handle_subtitle_display_error(e, "启动")
+                # 注意：字幕显示失败不影响主要转录功能
+
+        # 第4步：启动异步输出处理线程（如果需要）
         if self.config.real_time_update:
-            self.output_thread = threading.Thread(target=self._output_worker, daemon=True)
-            self.output_thread.start()
+            try:
+                logging.debug("正在启动异步输出处理线程...")
+                self.output_thread = threading.Thread(
+                    target=self._output_worker,
+                    daemon=True,
+                    name="OutputWorker"
+                )
+                self.output_thread.start()
+                logging.debug("异步输出处理线程已启动")
+            except Exception as e:
+                logging.error(f"启动异步输出线程失败: {e}")
+                logging.warning("将使用同步输出模式")
+                # 降级为同步模式，继续运行
+
+        logging.info("OutputHandler启动完成")
 
     def stop(self) -> None:
-        """Stop the output handler and cleanup resources"""
+        """
+        停止输出处理器并清理所有相关资源
+
+        停止流程：
+            1. 设置停止标志，通知所有组件准备停止
+            2. 等待异步输出线程正常结束
+            3. 停止字幕显示组件并清理窗口资源
+            4. 关闭日志文件并清理文件句柄
+
+        异常处理：
+            - 线程停止超时：强制标记为停止，避免程序阻塞
+            - 字幕显示停止失败：记录错误但继续清理其他资源
+            - 文件关闭失败：记录错误，文件句柄会被垃圾回收
+        """
+        # 第1步：设置停止标志
+        logging.info("正在停止OutputHandler...")
         self.is_running = False
 
-        if self.output_thread:
-            self.output_thread.join(timeout=1.0)
+        # 第2步：等待异步输出线程正常结束
+        if self.output_thread and self.output_thread.is_alive():
+            try:
+                logging.debug("正在等待异步输出线程结束...")
+                self.output_thread.join(timeout=2.0)  # 增加超时时间
 
+                if self.output_thread.is_alive():
+                    logging.warning("异步输出线程未能在指定时间内结束")
+                else:
+                    logging.debug("异步输出线程已正常结束")
+
+            except Exception as e:
+                logging.error(f"停止异步输出线程时发生错误: {e}")
+
+        # 第3步：停止字幕显示组件
+        if self.subtitle_display:
+            try:
+                logging.debug("正在停止字幕显示组件...")
+                self.subtitle_display.stop()
+                logging.info("字幕显示组件已停止")
+            except Exception as e:
+                logging.error(f"停止字幕显示组件失败: {e}")
+                self._handle_subtitle_display_error(e, "停止")
+
+        # 第4步：关闭日志文件
         if self.log_file:
-            self.log_file.close()
-            self.log_file = None
+            try:
+                logging.debug("正在关闭日志文件...")
+                self.log_file.close()
+                logging.debug("日志文件已关闭")
+            except Exception as e:
+                logging.error(f"关闭日志文件失败: {e}")
+            finally:
+                self.log_file = None
+
+        logging.info("OutputHandler已停止")
 
     def _output_worker(self) -> None:
         """Background worker for real-time output processing"""
@@ -151,39 +622,169 @@ class OutputHandler:
 
     def process_result(self, result: TranscriptionResult) -> None:
         """
-        Process a single transcription result
+        处理单个转录结果，包含格式化、显示和字幕更新
 
         Args:
-            result: Transcription result to process and display
+            result: 包含转录文本、置信度、时间戳等信息的转录结果对象
+
+        处理流程：
+            1. 根据配置格式化转录结果
+            2. 将结果添加到输出缓冲区（支持内存管理）
+            3. 更新显示统计信息（用于性能监控）
+            4. 如果是最终结果，生成字幕条目（用于文件导出）
+            5. 如果启用了字幕显示，更新屏幕字幕（实时显示功能）
+            6. 根据配置选择输出方式（同步或异步）
+
+        异常处理：
+            - 转录结果格式化失败：记录错误，继续处理
+            - 字幕显示失败：记录警告，不影响主要功能
+            - 输出失败：根据输出级别决定是否显示错误
+            - 整体处理异常：记录详细错误信息，调试模式下显示给用户
+
+        性能考虑：
+            - 字幕显示操作在独立线程中执行，不阻塞主流程
+            - 使用缓冲区管理内存，避免无限增长
+            - 异步输出处理提高实时性能
         """
         try:
+            # 第1步：格式化转录结果
             formatted = self._format_result(result)
 
-            # Add to buffer
+            # 第2步：添加到缓冲区（支持内存管理）
             self.buffer.add(formatted)
 
-            # Update metrics
+            # 第3步：更新统计信息（用于性能监控）
             self.metrics.update_output_stats(
-                formatted.line_count,
-                formatted.character_count,
-                result.is_final
+                formatted.line_count,        # 输出行数
+                formatted.character_count,   # 字符数
+                result.is_final             # 是否为最终结果
             )
 
-            # Handle subtitle generation
+            # 第4步：处理字幕生成（用于文件导出）
             if result.is_final and result.end_time:
                 self._add_subtitle_entry(result)
 
-            # Output based on configuration
+            # 第5步：更新屏幕字幕显示（实时显示功能）
+            self._update_screen_subtitle(result)
+
+            # 第6步：根据配置选择输出方式
             if self._should_display_result(result):
                 if self.config.real_time_update and self.is_running:
+                    # 异步输出（适用于实时场景，避免阻塞）
                     self.output_queue.put(formatted)
                 else:
+                    # 同步输出（适用于简单场景）
                     self._display_output(formatted)
 
         except Exception as e:
-            logging.error(f"Error processing result: {e}")
+            # 记录处理错误，避免程序崩溃
+            logging.error(f"处理转录结果时发生错误: {e}")
+
+            # 在调试模式下显示详细错误信息
             if self.config.output_level == OutputLevel.DEBUG:
-                self._display_error(f"Processing error: {e}")
+                self._display_error(f"处理错误: {e}")
+
+            # 重要：即使单个结果处理失败，也不应影响后续处理
+            # 继续处理下一个结果，保持系统稳定性
+
+    def _update_screen_subtitle(self, result: TranscriptionResult) -> None:
+        """
+        更新屏幕字幕显示，包含详细的错误处理和状态检查
+
+        Args:
+            result: 转录结果对象
+
+        显示条件：
+            1. 字幕显示组件已成功初始化
+            2. 结果为最终转录结果（排除中间结果）
+            3. 结果包含有效文本内容（排除空结果）
+            4. 字幕显示组件当前处于运行状态
+
+        线程安全：
+            - 字幕显示操作本身是线程安全的
+            - 使用after方法调度GUI更新到主线程
+            - 任何线程都可以安全调用此方法
+
+        错误处理：
+            - 组件未初始化：静默跳过，避免日志噪音
+            - 显示失败：记录警告，不影响转录功能
+            - 线程错误：捕获并处理所有可能的异常
+        """
+        # 检查字幕显示基本条件
+        if not self.subtitle_display:
+            # 字幕显示组件未初始化，这在配置中是正常的
+            return
+
+        # 检查结果有效性
+        if not result.is_final:
+            # 仅显示最终结果，避免中间结果造成闪烁
+            logging.debug(f"跳过中间结果: {result.text[:50]}...")
+            return
+
+        if not result.text or result.text.strip() == "":
+            # 空结果不显示，避免界面闪烁
+            return
+
+        # 执行字幕显示操作
+        try:
+            # 显示字幕文本和置信度
+            self.subtitle_display.show_subtitle(
+                text=result.text,
+                confidence=result.confidence
+            )
+
+            # 记录调试信息（仅在DEBUG级别）
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                logging.debug(f"字幕已更新: \"{result.text[:50]}...\" "
+                             f"(置信度: {result.confidence:.2f})")
+
+        except Exception as e:
+            # 字幕显示失败不应影响转录功能，仅记录警告
+            logging.warning(f"屏幕字幕显示失败: {e}")
+
+            # 在调试模式下提供更详细的错误信息
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                logging.debug(f"字幕显示详情 - 文本: \"{result.text[:30]}...\", "
+                             f"置信度: {result.confidence:.2f}, "
+                             f"组件状态: {self.subtitle_display.is_running if hasattr(self.subtitle_display, 'is_running') else '未知'}")
+
+            # 尝试重新初始化字幕显示组件（可选的恢复策略）
+            self._try_recover_subtitle_display(e)
+
+    def _try_recover_subtitle_display(self, original_error: Exception) -> None:
+        """
+        尝试恢复字幕显示功能
+
+        Args:
+            original_error: 导致恢复的原始错误
+
+        恢复策略：
+            1. 检查组件是否仍然存在
+            2. 尝试停止并重新启动组件
+            3. 如果恢复失败，禁用字幕显示以避免持续错误
+
+        注意：此方法是可选的恢复机制，仅在严重错误时调用
+        """
+        try:
+            logging.info("尝试恢复字幕显示功能...")
+
+            if self.subtitle_display and hasattr(self.subtitle_display, 'stop'):
+                # 尝试停止当前组件
+                self.subtitle_display.stop()
+
+                # 短暂等待后重新启动
+                import time
+                time.sleep(0.1)
+
+                self.subtitle_display.start()
+                logging.info("字幕显示功能恢复成功")
+
+        except Exception as recovery_error:
+            logging.warning(f"字幕显示功能恢复失败: {recovery_error}")
+            logging.info("将禁用字幕显示功能以避免持续错误")
+
+            # 禁用字幕显示以避免持续的错误日志
+            self.subtitle_display = None
 
     def process_batch(self, batch: BatchTranscriptionResult) -> None:
         """

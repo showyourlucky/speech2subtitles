@@ -70,7 +70,7 @@ class VadConfig:
     model_path: Optional[str] = None         # 自定义模型路径，None时使用默认路径
     threshold: float = 0.5                   # 语音检测阈值 (0.0-1.0)，值越高越严格
     min_speech_duration_ms: float = 100.0    # 最小语音持续时间(毫秒)，过滤短暂音频
-    min_silence_duration_ms: float = 250.0   # 最小静音持续时间(毫秒)，避免频繁切换
+    min_silence_duration_ms: float = 150.0   # 最小静音持续时间(毫秒)，避免频繁切换
     max_speech_duration_ms: float = 30000.0  # 最大语音持续时间(毫秒)，超过时自动分段，默认30秒
     window_size_samples: int = 512           # 音频处理窗口大小(采样点数)
     sample_rate: int = 16000                 # 音频采样率(Hz)，VAD模型需要16kHz

@@ -51,6 +51,60 @@ class SubtitleConstants:
     DEFAULT_FORMAT: str = "srt"
 
 
+class SubtitleDisplayConstants:
+    """字幕显示相关常量"""
+    SUPPORTED_POSITIONS: List[str] = ["top", "center", "bottom"]
+    DEFAULT_POSITION: str = "bottom"
+    MIN_FONT_SIZE: int = 12
+    MAX_FONT_SIZE: int = 72
+    DEFAULT_FONT_SIZE: int = 24
+    MIN_OPACITY: float = 0.1
+    MAX_OPACITY: float = 1.0
+    DEFAULT_OPACITY: float = 0.8
+    DEFAULT_MAX_DISPLAY_TIME: float = 5.0
+    DEFAULT_FONT_FAMILY: str = "Microsoft YaHei"
+
+
+@dataclass
+class SubtitleDisplayConfig:
+    """字幕显示配置数据类"""
+    enabled: bool = False                                    # 是否启用字幕显示
+    position: str = SubtitleDisplayConstants.DEFAULT_POSITION # 字幕位置
+    font_size: int = SubtitleDisplayConstants.DEFAULT_FONT_SIZE # 字体大小
+    font_family: str = SubtitleDisplayConstants.DEFAULT_FONT_FAMILY # 字体
+    opacity: float = SubtitleDisplayConstants.DEFAULT_OPACITY # 窗口透明度
+    max_display_time: float = SubtitleDisplayConstants.DEFAULT_MAX_DISPLAY_TIME # 最大显示时间
+    text_color: str = "#FFFFFF"                              # 文字颜色 (白色)
+    background_color: str = "#000000"                        # 背景颜色 (黑色)
+
+    def validate(self) -> None:
+        """验证字幕显示配置的有效性"""
+        # 验证字幕位置
+        if self.position not in SubtitleDisplayConstants.SUPPORTED_POSITIONS:
+            raise ValueError(
+                f"不支持的字幕位置: {self.position}，"
+                f"支持的位置: {SubtitleDisplayConstants.SUPPORTED_POSITIONS}"
+            )
+
+        # 验证字体大小
+        if not (SubtitleDisplayConstants.MIN_FONT_SIZE <= self.font_size <= SubtitleDisplayConstants.MAX_FONT_SIZE):
+            raise ValueError(
+                f"字体大小超出范围: {self.font_size}，"
+                f"允许范围: {SubtitleDisplayConstants.MIN_FONT_SIZE}-{SubtitleDisplayConstants.MAX_FONT_SIZE}"
+            )
+
+        # 验证透明度
+        if not (SubtitleDisplayConstants.MIN_OPACITY <= self.opacity <= SubtitleDisplayConstants.MAX_OPACITY):
+            raise ValueError(
+                f"透明度超出范围: {self.opacity}，"
+                f"允许范围: {SubtitleDisplayConstants.MIN_OPACITY}-{SubtitleDisplayConstants.MAX_OPACITY}"
+            )
+
+        # 验证显示时间
+        if self.max_display_time <= 0:
+            raise ValueError(f"最大显示时间必须大于0: {self.max_display_time}")
+
+
 @dataclass
 class Config:
     """系统配置数据类"""
@@ -84,6 +138,9 @@ class Config:
     subtitle_format: str = SubtitleConstants.DEFAULT_FORMAT  # 字幕格式 (srt/vtt/ass)
     keep_temp: bool = False                                  # 保留临时音频文件
     verbose: bool = False                                    # 显示详细日志
+
+    # 字幕显示配置 (新增)
+    subtitle_display: SubtitleDisplayConfig = SubtitleDisplayConfig()  # 字幕显示配置
 
     def validate(self) -> None:
         """验证配置的有效性"""
@@ -178,6 +235,10 @@ class Config:
                 f"不支持的字幕格式: {self.subtitle_format}，"
                 f"支持的格式: {SubtitleConstants.SUPPORTED_FORMATS}"
             )
+
+        # 验证字幕显示配置
+        if self.subtitle_display:
+            self.subtitle_display.validate()
 
     def __post_init__(self):
         """初始化后验证"""

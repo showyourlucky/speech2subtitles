@@ -263,7 +263,11 @@ class TranscriptionPipeline:
                 real_time_update=True,                        # 实时更新显示
                 output_level=OutputLevel.NORMAL               # 输出详细级别
             )
-            self.output_handler = OutputHandler(output_config)
+            # 创建输出处理器，传递字幕显示配置
+            self.output_handler = OutputHandler(
+                output_config,
+                subtitle_display_config=getattr(self.config, 'subtitle_display', None)
+            )
 
             logger.info("All pipeline components initialized successfully")
             return True
