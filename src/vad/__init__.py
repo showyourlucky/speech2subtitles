@@ -12,6 +12,7 @@ from .models import (
     ConfigurationError
 )
 from .detector import VoiceActivityDetector, StreamingVAD, VadModelFactory, SherpaOnnxVAD, LegacyTorchVAD
+from .vad_manager import VadManager
 
 __all__ = [
     # 数据模型和配置
@@ -29,6 +30,8 @@ __all__ = [
     # 检测器类
     "VoiceActivityDetector", # 主VAD检测器（统一接口）
     "StreamingVAD",      # 流式VAD处理器
+    # 管理器类
+    "VadManager",        # VAD检测器单例管理器
     # 工厂和实现类
     "VadModelFactory",   # VAD模型工厂类
     "SherpaOnnxVAD",     # sherpa-onnx VAD实现

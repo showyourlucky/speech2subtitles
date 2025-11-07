@@ -22,6 +22,7 @@ class AudioSourceType(Enum):
     """
     MICROPHONE = "microphone"      # 麦克风输入
     SYSTEM_AUDIO = "system_audio"  # 系统音频输入（立体声混音）
+    FILE = "file"                  # 文件输入（音频/视频文件）
 
 
 class AudioFormat(Enum):

@@ -312,7 +312,7 @@ def run_file_transcription(config):
     # 步骤3: 初始化转录引擎和VAD
     from src.transcription.engine import TranscriptionEngine
     from src.transcription.models import TranscriptionConfig, TranscriptionModel, LanguageCode
-    from src.vad.detector import VoiceActivityDetector
+    from src.vad import VadManager  # 使用 VAD 管理器
     from src.vad.models import VadConfig, VadModel
 
     print("\n[初始化] 加载转录引擎...")
@@ -345,9 +345,9 @@ def run_file_transcription(config):
         use_sherpa_onnx=True  # 优先使用sherpa-onnx
     )
 
-    # 初始化VAD检测器
+    # 初始化VAD检测器（使用 VadManager 实现智能复用）
     try:
-        vad = VoiceActivityDetector(vad_config)
+        vad = VadManager.get_detector(vad_config)
         print("  ✓ VAD检测器初始化成功")
     except Exception as e:
         print(f"  ✗ VAD检测器初始化失败: {e}")

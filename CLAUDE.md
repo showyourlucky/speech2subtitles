@@ -1,6 +1,31 @@
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
+
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
+
 # Speech2Subtitles 实时语音转录系统
 
 ## 变更日志 (Changelog)
+- **2025-11-07**: 为GUI文件选择添加复选框批量删除功能
+  - 文件列表项添加复选框支持
+  - 新增"全选"/"取消全选"按钮
+  - "移除选中"按钮支持批量删除勾选文件
+  - 按钮状态实时响应复选框变化
+  - 完全向后兼容，不影响现有功能
 - **2025-09-28 02:15**: 完成项目全面分析，添加详细中文注释，生成Bug报告和完整模块文档
 - **2025-09-27 23:48**: 初始AI上下文文档创建，包含完整的模块分析和架构概览
 

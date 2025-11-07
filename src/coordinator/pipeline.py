@@ -20,10 +20,13 @@ from contextlib import contextmanager  # 上下文管理器
 from src.config.models import Config, AudioConstants, VadConstants  # 系统主配置和常量
 from src.hardware.gpu_detector import GPUDetector  # GPU硬件检测
 from src.audio.capture import AudioCapture  # 音频捕获组件
+from src.audio.file_capture import FileAudioCapture  # 文件音频捕获组件
 from src.audio.models import AudioConfig, AudioChunk, AudioSourceType, AudioFormat  # 音频相关数据模型
-from src.vad.detector import VoiceActivityDetector  # 语音活动检测器
+from src.vad import VadManager  # VAD 检测器管理器（单例）
+from src.vad.detector import VoiceActivityDetector  # VAD 检测器类（用于类型注解）
 from src.vad.models import VadConfig, VadResult, VadState, VadModel  # VAD相关数据模型
 from src.transcription.engine import TranscriptionEngine  # 语音转录引擎
+from src.transcription.engine_manager import TranscriptionEngineManager  # 转录引擎管理器（单例）
 from src.transcription.models import TranscriptionConfig, TranscriptionResult, TranscriptionModel, LanguageCode, ProcessorType  # 转录相关数据模型
 from src.output.handler import OutputHandler  # 输出处理器
 from src.output.models import OutputConfig, OutputFormat, OutputLevel  # 输出相关数据模型
@@ -204,26 +207,59 @@ class TranscriptionPipeline:
                     f"使用默认的{AudioConstants.DEFAULT_SAMPLE_RATE}Hz"
                 )
 
-            audio_config = AudioConfig(
-                # 根据配置选择音频源：麦克风或系统音频
-                source_type=AudioSourceType.MICROPHONE if self.config.input_source == "microphone" else AudioSourceType.SYSTEM_AUDIO,
-                sample_rate=self.config.sample_rate,  # 采样率，一般为16kHz
-                chunk_size=self.config.chunk_size,    # 音频块大小，影响延迟
-                device_index=self.config.device_id,   # 指定的音频设备ID
-                channels=self.config.channels,        # 使用配置中的声道数
-                format_type=audio_format               # 使用动态选择的音频格式
-            )
             # 根据音频源类型选择相应的捕获器
-            if self.config.input_source == "system":
+            # 优先检查文件输入模式（通过 input_file 判断）
+            if self.config.input_file is not None:
+                # 文件输入模式
+                if not isinstance(self.config.input_file, list) or len(self.config.input_file) == 0:
+                    raise ValueError("文件输入模式需要指定文件路径（config.input_file）")
+
+                file_path = self.config.input_file[0]  # 使用第一个文件
+                logger.info(f"Using FileAudioCapture for file: {file_path}")
+
+                audio_config = AudioConfig(
+                    source_type=AudioSourceType.FILE,
+                    sample_rate=self.config.sample_rate,
+                    chunk_size=self.config.chunk_size,
+                    device_index=None,
+                    channels=1,  # 文件模式强制单声道
+                    format_type=audio_format
+                )
+
+                self.audio_capture = FileAudioCapture(audio_config, file_path)
+                self.audio_capture.add_callback(self._on_audio_data)
+                # 添加完成回调：文件处理完成后自动停止 Pipeline
+                self.audio_capture.add_completion_callback(self._on_file_completion)
+                logger.info(f"FileAudioCapture initialized for: {file_path}")
+
+            elif self.config.input_source == "system":
+                # 系统音频输入
+                audio_config = AudioConfig(
+                    source_type=AudioSourceType.SYSTEM_AUDIO,
+                    sample_rate=self.config.sample_rate,
+                    chunk_size=self.config.chunk_size,
+                    device_index=self.config.device_id,
+                    channels=self.config.channels,
+                    format_type=audio_format
+                )
                 from src.audio.capture import SystemAudioCapture
                 self.audio_capture = SystemAudioCapture(audio_config)
                 logger.info(f"Using SystemAudioCapture with backend: {self.audio_capture.backend_type}")
+                self.audio_capture.add_callback(self._on_audio_data)
+
             else:
-                # 麦克风输入使用标准的AudioCapture
+                # 麦克风输入（默认）
+                audio_config = AudioConfig(
+                    source_type=AudioSourceType.MICROPHONE,
+                    sample_rate=self.config.sample_rate,
+                    chunk_size=self.config.chunk_size,
+                    device_index=self.config.device_id,
+                    channels=self.config.channels,
+                    format_type=audio_format
+                )
                 self.audio_capture = AudioCapture(audio_config)
                 logger.info("Using standard AudioCapture for microphone input")
-
-            self.audio_capture.add_callback(self._on_audio_data)  # 注册音频数据回调
+                self.audio_capture.add_callback(self._on_audio_data)
 
             # 3. 初始化VAD检测器：语音活动检测，过滤静音段
             # 将VAD窗口大小从秒转换为采样点数
@@ -238,10 +274,12 @@ class TranscriptionPipeline:
                 #min_silence_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 200, # 基于敏感度的静音持续时间
                 return_confidence=True                                          # 返回置信度分数
             )
-            self.vad_detector = VoiceActivityDetector(vad_config)
+            # 使用 VadManager 实现智能复用，避免重复加载模型
+            self.vad_detector = VadManager.get_detector(vad_config)
             self.vad_detector.add_callback(self._on_vad_result)  # 注册VAD结果回调
 
             # 4. 初始化转录引擎：使用sense-voice模型进行语音识别
+            # 使用TranscriptionEngineManager实现智能复用，避免重复加载模型
             transcription_config = TranscriptionConfig(
                 model=TranscriptionModel.SENSE_VOICE,  # 使用sense-voice模型
                 model_path=self.config.model_path,     # 模型文件路径
@@ -251,8 +289,15 @@ class TranscriptionPipeline:
                 sample_rate=self.config.sample_rate,   # 与音频采样率保持一致
                 use_gpu=self.config.use_gpu and gpu_available  # GPU加速标志
             )
-            self.transcription_engine = TranscriptionEngine(transcription_config)
+            # 通过TranscriptionEngineManager获取引擎实例
+            # 如果配置未变化，将复用已加载的引擎（避免~2GB模型重新加载）
+            self.transcription_engine = TranscriptionEngineManager.get_engine(transcription_config)
             self.transcription_engine.add_callback(self._on_transcription_result)  # 注册转录结果回调
+
+            # 记录引擎使用统计
+            stats = TranscriptionEngineManager.get_statistics()
+            logger.info(f"TranscriptionEngine统计: 加载次数={stats['engine_loads']}, "
+                       f"复用次数={stats['engine_reuses']}, 当前模型={stats['current_model']}")
 
             # 5. 初始化输出处理器：格式化和显示转录结果
             output_config = OutputConfig(
@@ -511,6 +556,21 @@ class TranscriptionPipeline:
     def _on_audio_data(self, audio_chunk: AudioChunk) -> None:
         """音频数据回调"""
         self._emit_event(EventType.AUDIO_DATA, audio_chunk, "audio_capture")
+
+    def _on_file_completion(self) -> None:
+        """文件处理完成回调
+
+        当 FileAudioCapture 完成文件处理时调用
+        自动停止 Pipeline 以触发转录完成事件
+        """
+        logger.info("File processing completed, stopping pipeline...")
+        # 延迟停止，确保所有音频数据都被处理
+        import threading
+        def delayed_stop():
+            time.sleep(0.5)  # 给 VAD 和转录引擎一些时间处理剩余数据
+            if self.is_running:
+                self.stop()
+        threading.Thread(target=delayed_stop, daemon=True).start()
 
     def _on_vad_result(self, vad_result: VadResult) -> None:
         """VAD检测结果回调函数

@@ -7,15 +7,49 @@
 
 ## 入口和启动
 - **主检测器**: `detector.py::VoiceActivityDetector`
+- **VAD管理器**: `vad_manager.py::VadManager` (单例模式，智能复用)
 - **VAD配置**: `models.py::VadConfig`
-- **模型加载**: 自动下载并加载Silero VAD v4模型
-- **集成方式**: 由`TranscriptionPipeline`创建并管理VAD检测器
+- **模型加载**: 自动下载并加载Silero VAD v5模型或 Ten VAD 模型
+- **集成方式**: 由`TranscriptionPipeline`通过`VadManager`创建并管理VAD检测器
 
 ## 外部接口
 
 ### 主要类和方法
+
+#### VAD 管理器（推荐使用）
 ```python
-# 语音活动检测器
+# VAD 检测器管理器 - 单例模式
+class VadManager:
+    # 类方法 - 推荐使用方式
+    @classmethod
+    def get_detector(cls, config: VadConfig) -> VoiceActivityDetector
+        """获取或创建 VAD 检测器（智能复用）"""
+
+    @classmethod
+    def release(cls) -> None
+        """释放所有检测器资源（应用退出时调用）"""
+
+    @classmethod
+    def get_statistics(cls) -> Dict[str, Any]
+        """获取检测器使用统计信息"""
+
+    @classmethod
+    def is_detector_loaded(cls) -> bool
+        """检查是否有已加载的检测器"""
+
+    @classmethod
+    def get_current_model_type(cls) -> Optional[str]
+        """获取当前加载的模型类型"""
+
+# 使用示例
+config = VadConfig(threshold=0.5)
+detector = VadManager.get_detector(config)  # 首次加载
+detector2 = VadManager.get_detector(config)  # 复用已加载的检测器
+```
+
+#### 语音活动检测器
+```python
+# 语音活动检测器（通过 VadManager 获取）
 class VoiceActivityDetector:
     def __init__(self, config: VadConfig)                    # 初始化VAD检测器
     def process_audio(self, audio_data: np.ndarray) -> VadResult  # 处理音频数据
@@ -172,7 +206,39 @@ model.eval()
 
 ## 使用示例
 
-### 基本VAD检测
+### ⭐ 推荐方式：使用 VadManager（单例模式）
+```python
+from src.vad import VadManager, VadConfig, VadModel, VadState
+
+# 创建VAD配置
+config = VadConfig(
+    model=VadModel.SILERO,
+    threshold=0.5,
+    sample_rate=16000,
+    min_speech_duration_ms=250.0,
+    return_confidence=True
+)
+
+# 使用 VadManager 获取检测器（智能复用）
+vad = VadManager.get_detector(config)
+
+# 添加结果处理回调
+def handle_vad_result(result):
+    if result.state == VadState.SPEECH:
+        print(f"检测到语音: 置信度={result.confidence:.2f}")
+
+vad.add_callback(handle_vad_result)
+
+# 处理音频数据
+import numpy as np
+audio_data = np.random.randn(16000).astype(np.float32)
+vad.process_audio(audio_data)
+
+# 应用退出时释放资源
+VadManager.release()
+```
+
+### 传统方式：直接使用 VoiceActivityDetector
 ```python
 from src.vad.detector import VoiceActivityDetector
 from src.vad.models import VadConfig, VadModel, VadState
@@ -186,7 +252,7 @@ config = VadConfig(
     return_confidence=True
 )
 
-# 初始化VAD检测器
+# 初始化VAD检测器（不复用，每次都创建新实例）
 vad = VoiceActivityDetector(config)
 
 # 添加结果处理回调

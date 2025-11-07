@@ -4,7 +4,7 @@
 定义系统配置的数据结构和验证逻辑
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from pathlib import Path
 
@@ -36,7 +36,7 @@ class VadConstants:
 class ModelConstants:
     """模型相关常量"""
     SUPPORTED_EXTENSIONS: List[str] = ['.onnx', '.bin']
-    SUPPORTED_INPUT_SOURCES: List[str] = ["microphone", "system"]
+    SUPPORTED_INPUT_SOURCES: List[str] = ["microphone", "system"]  # 实时音频输入源
 
 
 class OutputConstants:
@@ -133,14 +133,14 @@ class Config:
     show_timestamp: bool = True                              # 显示时间戳
 
     # 媒体文件转字幕配置 (新增)
-    input_file: Optional[List[str]] = None                   # 输入文件/文件列表/目录路径
+    input_file: Optional[List[str]] = field(default=None)   # 输入文件/文件列表/目录路径
     output_dir: Optional[str] = None                         # 字幕输出目录
     subtitle_format: str = SubtitleConstants.DEFAULT_FORMAT  # 字幕格式 (srt/vtt/ass)
     keep_temp: bool = False                                  # 保留临时音频文件
     verbose: bool = False                                    # 显示详细日志
 
     # 字幕显示配置 (新增)
-    subtitle_display: SubtitleDisplayConfig = SubtitleDisplayConfig()  # 字幕显示配置
+    subtitle_display: SubtitleDisplayConfig = field(default_factory=SubtitleDisplayConfig)  # 字幕显示配置
 
     def validate(self) -> None:
         """验证配置的有效性"""
@@ -156,20 +156,24 @@ class Config:
                 f"支持的格式: {ModelConstants.SUPPORTED_EXTENSIONS}"
             )
 
-        # 验证输入源 - input_source和input_file至少提供一个
+        # 验证输入模式: --input-source {microphone,system} | --input-file FILE
+        # 规则1: 必须提供其中之一
         if self.input_source is None and self.input_file is None:
             raise ValueError(
-                "必须提供 --input-source (实时音频) 或 --input-file (离线文件) 之一"
+                "必须提供以下参数之一：\n"
+                "  - 实时模式: --input-source {microphone,system}\n"
+                "  - 离线模式: --input-file FILE"
             )
 
-        # 验证输入源互斥
+        # 规则2: 两者互斥，不能同时提供
         if self.input_source is not None and self.input_file is not None:
             raise ValueError(
-                "--input-source 和 --input-file 不能同时使用，"
-                "请选择实时转录模式或离线文件模式"
+                "参数冲突：--input-source 和 --input-file 互斥，请只提供其中之一\n"
+                "  - 实时转录: 使用 --input-source {microphone,system}\n"
+                "  - 离线转录: 使用 --input-file FILE"
             )
 
-        # 验证实时音频输入源
+        # 规则3: 如果提供了 input_source，验证其有效性
         if self.input_source is not None:
             if self.input_source not in ModelConstants.SUPPORTED_INPUT_SOURCES:
                 raise ValueError(
@@ -246,8 +250,8 @@ class Config:
         pass
 
     def is_realtime_mode(self) -> bool:
-        """判断是否为实时转录模式"""
-        return self.input_source is not None
+        """判断是否为实时转录模式（麦克风或系统音频）"""
+        return self.input_source is not None and self.input_source in ["microphone", "system"]
 
     def is_file_mode(self) -> bool:
         """判断是否为离线文件模式"""
