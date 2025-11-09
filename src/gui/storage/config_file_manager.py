@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from src.config.models import Config, SubtitleDisplayConfig
+from src.config.models import Config, SubtitleDisplayConfig, VadProfile
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,26 @@ class ConfigFileManager:
                 "max_display_time": config.subtitle_display.max_display_time,
                 "text_color": config.subtitle_display.text_color,
                 "background_color": config.subtitle_display.background_color,
-            }
+            },
+
+            # VAD方案配置 (新增)
+            "vad_profiles": {
+                profile_id: {
+                    "profile_name": profile.profile_name,
+                    "profile_id": profile.profile_id,
+                    "threshold": profile.threshold,
+                    "min_speech_duration_ms": profile.min_speech_duration_ms,
+                    "min_silence_duration_ms": profile.min_silence_duration_ms,
+                    "max_speech_duration_ms": profile.max_speech_duration_ms,
+                    "sample_rate": profile.sample_rate,
+                    "model": profile.model,
+                    "model_path": profile.model_path,
+                    "use_sherpa_onnx": profile.use_sherpa_onnx,
+                    "window_size_samples": profile.window_size_samples
+                }
+                for profile_id, profile in config.vad_profiles.items()
+            },
+            "active_vad_profile_id": config.active_vad_profile_id,
         }
 
         return config_dict
@@ -181,6 +200,33 @@ class ConfigFileManager:
             text_color=subtitle_display_dict.get("text_color", "#FFFFFF"),
             background_color=subtitle_display_dict.get("background_color", "#000000"),
         )
+
+        # 处理VAD方案配置 (新增)
+        vad_profiles_dict = config_dict.get("vad_profiles", {})
+        vad_profiles = {}
+
+        if vad_profiles_dict:
+            # 反序列化每个VAD方案
+            for profile_id, profile_data in vad_profiles_dict.items():
+                vad_profiles[profile_id] = VadProfile(
+                    profile_name=profile_data.get("profile_name", "未命名"),
+                    profile_id=profile_data.get("profile_id", profile_id),
+                    threshold=profile_data.get("threshold", 0.5),
+                    min_speech_duration_ms=profile_data.get("min_speech_duration_ms", 100.0),
+                    min_silence_duration_ms=profile_data.get("min_silence_duration_ms", 150.0),
+                    max_speech_duration_ms=profile_data.get("max_speech_duration_ms", 30000.0),
+                    sample_rate=profile_data.get("sample_rate", 16000),
+                    model=profile_data.get("model", "silero_vad"),
+                    model_path=profile_data.get("model_path"),
+                    use_sherpa_onnx=profile_data.get("use_sherpa_onnx", True),
+                    window_size_samples=profile_data.get("window_size_samples", 512)
+                )
+        else:
+            # 如果没有VAD方案配置,从旧字段迁移或创建默认方案
+            vad_profiles = self._migrate_legacy_vad_config(config_dict)
+
+        # 获取活跃方案ID
+        active_vad_profile_id = config_dict.get("active_vad_profile_id", "default")
 
         # 创建Config对象
         config = Config(
@@ -216,6 +262,10 @@ class ConfigFileManager:
 
             # 字幕显示配置
             subtitle_display=subtitle_display,
+
+            # VAD方案配置 (新增)
+            vad_profiles=vad_profiles,
+            active_vad_profile_id=active_vad_profile_id,
         )
 
         return config
@@ -241,11 +291,11 @@ class ConfigFileManager:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"Config saved successfully: {self.config_file}")
+            logger.info(f"配置保存成功: {self.config_file}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save config: {e}")
+            logger.error(f"save_config-保存配置失败: {e}")
             return False
 
     def load_config(self) -> Optional[Config]:
@@ -280,6 +330,39 @@ class ConfigFileManager:
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
             return None
+
+    def _migrate_legacy_vad_config(self, config_dict: Dict[str, Any]) -> Dict[str, VadProfile]:
+        """
+        从旧版VAD配置迁移到新的VAD方案系统
+
+        Args:
+            config_dict: 旧版配置字典
+
+        Returns:
+            Dict[str, VadProfile]: VAD方案字典
+        """
+        logger.info("Migrating legacy VAD config to profile system")
+
+        # 从旧字段提取VAD参数
+        threshold = config_dict.get("vad_threshold", 0.5)
+        sample_rate = config_dict.get("sample_rate", 16000)
+
+        # 创建默认VAD方案
+        default_profile = VadProfile(
+            profile_name="默认",
+            profile_id="default",
+            threshold=threshold,
+            min_speech_duration_ms=100.0,
+            min_silence_duration_ms=150.0,
+            max_speech_duration_ms=30000.0,
+            sample_rate=sample_rate,
+            model="silero_vad",
+            use_sherpa_onnx=True,
+            window_size_samples=512
+        )
+
+        logger.info(f"Created default VAD profile from legacy config (threshold={threshold}, sample_rate={sample_rate})")
+        return {"default": default_profile}
 
     def _migrate_config(self, data: Dict[str, Any], from_version: str) -> Dict[str, Any]:
         """迁移旧版本配置到新版本
@@ -360,11 +443,11 @@ class ConfigFileManager:
             with open(export_file, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"Config exported to: {export_file}")
+            logger.info(f"配置导出到: {export_file}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to export config: {e}")
+            logger.error(f"导出配置失败: {e}")
             return False
 
     def import_config(self, import_path: str) -> Optional[Config]:

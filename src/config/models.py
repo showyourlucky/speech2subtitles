@@ -5,8 +5,9 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pathlib import Path
+import uuid
 
 
 # 系统常量定义
@@ -66,6 +67,120 @@ class SubtitleDisplayConstants:
 
 
 @dataclass
+class VadProfile:
+    """
+    VAD配置方案数据类
+
+    包含完整的VAD参数配置,支持保存和切换多个配置方案
+    所有参数与VadConfig模型和detector.py初始化逻辑保持一致
+    """
+    # 方案基本信息
+    profile_name: str                                    # 方案名称 (如"默认"、"安静环境"、"嘈杂环境")
+    profile_id: str = field(default_factory=lambda: str(uuid.uuid4()))  # 方案唯一ID
+
+    # VAD核心参数 (对应 VadConfig 和 detector.py:228-263)
+    threshold: float = VadConstants.DEFAULT_THRESHOLD    # 语音检测阈值 (0.0-1.0)
+    min_speech_duration_ms: float = 100.0                # 最小语音持续时间(毫秒)
+    min_silence_duration_ms: float = 150.0               # 最小静音持续时间(毫秒)
+    max_speech_duration_ms: float = 30000.0              # 最大语音持续时间(毫秒),默认30秒
+    sample_rate: int = AudioConstants.DEFAULT_SAMPLE_RATE # 音频采样率(Hz)
+
+    # 模型配置
+    model: str = "silero_vad"                            # 模型类型: "silero_vad" 或 "ten_vad"
+    model_path: Optional[str] = None                     # 自定义模型路径,None时使用默认路径
+    use_sherpa_onnx: bool = True                         # 是否使用sherpa-onnx框架
+
+    # 窗口配置
+    window_size_samples: int = 512                       # 音频处理窗口大小(采样点数)
+
+    def validate(self) -> None:
+        """验证VAD方案配置的有效性"""
+        # 验证阈值范围
+        if not VadConstants.MIN_THRESHOLD <= self.threshold <= VadConstants.MAX_THRESHOLD:
+            raise ValueError(
+                f"VAD阈值必须在{VadConstants.MIN_THRESHOLD}-{VadConstants.MAX_THRESHOLD}之间: "
+                f"{self.threshold}"
+            )
+
+        # 验证持续时间参数
+        if self.min_speech_duration_ms <= 0:
+            raise ValueError(f"最小语音持续时间必须为正数: {self.min_speech_duration_ms}ms")
+
+        if self.min_silence_duration_ms <= 0:
+            raise ValueError(f"最小静音持续时间必须为正数: {self.min_silence_duration_ms}ms")
+
+        if self.max_speech_duration_ms <= 0:
+            raise ValueError(f"最大语音持续时间必须为正数: {self.max_speech_duration_ms}ms")
+
+        if self.min_speech_duration_ms >= self.max_speech_duration_ms:
+            raise ValueError(
+                f"最小语音持续时间({self.min_speech_duration_ms}ms)不能大于等于"
+                f"最大语音持续时间({self.max_speech_duration_ms}ms)"
+            )
+
+        # 验证采样率
+        if self.sample_rate not in AudioConstants.SUPPORTED_SAMPLE_RATES:
+            raise ValueError(
+                f"不支持的采样率: {self.sample_rate}, "
+                f"支持的采样率: {AudioConstants.SUPPORTED_SAMPLE_RATES}"
+            )
+
+        # 验证模型类型
+        if self.model not in ["silero_vad", "ten_vad"]:
+            raise ValueError(f"不支持的模型类型: {self.model}, 支持: silero_vad, ten_vad")
+
+        # 验证方案名称
+        if not self.profile_name or not self.profile_name.strip():
+            raise ValueError("VAD方案名称不能为空")
+
+    def to_vad_config(self):
+        """
+        转换为VadConfig对象
+
+        Returns:
+            VadConfig: VAD配置对象,用于初始化检测器
+        """
+        from src.vad.models import VadConfig, VadModel
+
+        # 将字符串模型名转换为VadModel枚举
+        vad_model = VadModel.SILERO if self.model == "silero_vad" else VadModel.TEN_VAD
+
+        return VadConfig(
+            model=vad_model,
+            model_path=self.model_path,
+            threshold=self.threshold,
+            min_speech_duration_ms=self.min_speech_duration_ms,
+            min_silence_duration_ms=self.min_silence_duration_ms,
+            max_speech_duration_ms=self.max_speech_duration_ms,
+            window_size_samples=self.window_size_samples,
+            sample_rate=self.sample_rate,
+            return_confidence=True,
+            use_sherpa_onnx=self.use_sherpa_onnx
+        )
+
+    @staticmethod
+    def create_default_profile() -> 'VadProfile':
+        """
+        创建默认VAD方案
+
+        Returns:
+            VadProfile: 默认配置方案
+        """
+        return VadProfile(
+            profile_name="默认",
+            profile_id="default",
+            threshold=VadConstants.DEFAULT_THRESHOLD,
+            min_speech_duration_ms=100.0,
+            min_silence_duration_ms=150.0,
+            max_speech_duration_ms=30000.0,
+            sample_rate=AudioConstants.DEFAULT_SAMPLE_RATE,
+            model="silero_vad",
+            use_sherpa_onnx=True,
+            window_size_samples=512
+        )
+
+
+@dataclass
 class SubtitleDisplayConfig:
     """字幕显示配置数据类"""
     enabled: bool = False                                    # 是否启用字幕显示
@@ -115,7 +230,7 @@ class Config:
 
     # 可选配置
     use_gpu: bool = True                                     # 是否使用GPU加速
-    vad_sensitivity: float = VadConstants.DEFAULT_SENSITIVITY # VAD敏感度 (0.0-1.0)
+    vad_sensitivity: float = VadConstants.DEFAULT_SENSITIVITY # VAD敏感度 (0.0-1.0) [已废弃,保留用于向后兼容]
     output_format: str = OutputConstants.DEFAULT_FORMAT      # 输出格式类型
     device_id: Optional[int] = None                          # 音频设备ID
 
@@ -124,9 +239,13 @@ class Config:
     chunk_size: int = AudioConstants.DEFAULT_CHUNK_SIZE     # 音频块大小
     channels: int = AudioConstants.DEFAULT_CHANNELS         # 音频声道数
 
-    # VAD配置
-    vad_window_size: float = VadConstants.DEFAULT_WINDOW_SIZE # VAD窗口大小(秒)
-    vad_threshold: float = VadConstants.DEFAULT_THRESHOLD    # VAD阈值
+    # VAD配置 (旧版字段,保留用于向后兼容)
+    vad_window_size: float = VadConstants.DEFAULT_WINDOW_SIZE # VAD窗口大小(秒) [已废弃]
+    vad_threshold: float = VadConstants.DEFAULT_THRESHOLD    # VAD阈值 [已废弃]
+
+    # VAD方案管理 (新增)
+    vad_profiles: Dict[str, VadProfile] = field(default_factory=dict)  # VAD配置方案字典 {profile_id: VadProfile}
+    active_vad_profile_id: str = "default"                   # 当前活跃的VAD方案ID
 
     # 输出配置
     show_confidence: bool = True                             # 显示置信度
@@ -244,10 +363,31 @@ class Config:
         if self.subtitle_display:
             self.subtitle_display.validate()
 
+        # 验证VAD方案配置
+        if not self.vad_profiles:
+            # 如果没有VAD方案,自动创建默认方案
+            self.vad_profiles = {"default": VadProfile.create_default_profile()}
+
+        # 验证活跃方案ID存在
+        if self.active_vad_profile_id not in self.vad_profiles:
+            raise ValueError(
+                f"活跃的VAD方案ID '{self.active_vad_profile_id}' 不存在，"
+                f"可用方案: {list(self.vad_profiles.keys())}"
+            )
+
+        # 验证所有VAD方案
+        for profile_id, profile in self.vad_profiles.items():
+            try:
+                profile.validate()
+            except Exception as e:
+                raise ValueError(f"VAD方案 '{profile_id}' 配置无效: {e}")
+
     def __post_init__(self):
         """初始化后验证"""
         # 注意: 在配置未完全加载前不验证,由ConfigManager调用validate()
-        pass
+        # 如果 vad_profiles 为空,初始化为包含默认方案的字典
+        if not self.vad_profiles:
+            self.vad_profiles = {"default": VadProfile.create_default_profile()}
 
     def is_realtime_mode(self) -> bool:
         """判断是否为实时转录模式（麦克风或系统音频）"""
@@ -256,6 +396,34 @@ class Config:
     def is_file_mode(self) -> bool:
         """判断是否为离线文件模式"""
         return self.input_file is not None
+
+    def get_active_vad_profile(self) -> VadProfile:
+        """
+        获取当前活跃的VAD方案
+
+        Returns:
+            VadProfile: 当前活跃的VAD配置方案
+
+        Raises:
+            ValueError: 如果活跃方案不存在
+        """
+        if self.active_vad_profile_id not in self.vad_profiles:
+            raise ValueError(f"活跃的VAD方案 '{self.active_vad_profile_id}' 不存在")
+        return self.vad_profiles[self.active_vad_profile_id]
+
+    def set_active_vad_profile(self, profile_id: str) -> None:
+        """
+        设置活跃的VAD方案
+
+        Args:
+            profile_id: VAD方案ID
+
+        Raises:
+            ValueError: 如果方案不存在
+        """
+        if profile_id not in self.vad_profiles:
+            raise ValueError(f"VAD方案 '{profile_id}' 不存在")
+        self.active_vad_profile_id = profile_id
 
 
 @dataclass

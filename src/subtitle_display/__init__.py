@@ -15,15 +15,27 @@ try:
 except ImportError:
     THREAD_SAFE_AVAILABLE = False
 
-# 导入包装器
-from .display_wrapper import SubtitleDisplay
+# 导入包装器和单例管理函数
+from .display_wrapper import (
+    SubtitleDisplay,
+    get_subtitle_display_instance,
+    reset_subtitle_display_instance
+)
 
 # 导入配置和异常类
 from ..config.models import SubtitleDisplayConfig
 from ..utils.error_handler import ConfigurationError, ComponentInitializationError
 
-# 导出主要类
-__all__ = ['SubtitleDisplay', 'ThreadSafeSubtitleDisplay', 'SubtitleDisplayConfig']
+# 导出主要类和函数
+__all__ = [
+    'SubtitleDisplay',
+    'ThreadSafeSubtitleDisplay',
+    'SubtitleDisplayConfig',
+    'get_subtitle_display_instance',
+    'reset_subtitle_display_instance',
+    'create_subtitle_display',
+    'is_thread_safe_available'
+]
 
 # 模块级别的日志
 logger = logging.getLogger(__name__)

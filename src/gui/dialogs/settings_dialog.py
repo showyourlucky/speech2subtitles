@@ -72,6 +72,14 @@ class SettingsDialog(QDialog):
         self.gpu_page: Optional[QWidget] = None
         self.subtitle_page: Optional[QWidget] = None
 
+        # VAD方案管理组件
+        self.vad_profile_list: Optional[QListWidget] = None
+        self.vad_add_button: Optional[QPushButton] = None
+        self.vad_delete_button: Optional[QPushButton] = None
+        self.vad_copy_button: Optional[QPushButton] = None
+        self.vad_rename_button: Optional[QPushButton] = None
+        self.current_editing_profile_id: Optional[str] = None  # 当前正在编辑的方案ID
+
         # 配置控件引用（用于收集设置）
         self.config_widgets: Dict[str, Any] = {}
 
@@ -432,49 +440,67 @@ class SettingsDialog(QDialog):
         return page
 
     def _create_vad_page(self) -> QWidget:
-        """创建VAD参数页"""
+        """创建VAD方案管理页面
+
+        布局:
+            左侧: VAD方案列表 + 操作按钮(新增/删除/复制/重命名)
+            右侧: 选中方案的参数编辑区域
+        """
         page = QWidget()
-        layout = QFormLayout(page)
+        main_layout = QHBoxLayout(page)
 
-        # VAD敏感度
-        sensitivity_layout = QHBoxLayout()
-        sensitivity_slider = QSlider(Qt.Horizontal)
-        sensitivity_slider.setRange(0, 100)
-        sensitivity_slider.setValue(int(self.config.vad_sensitivity * 100))
-        sensitivity_spinbox = QDoubleSpinBox()
-        sensitivity_spinbox.setRange(0.0, 1.0)
-        sensitivity_spinbox.setSingleStep(0.1)
-        sensitivity_spinbox.setValue(self.config.vad_sensitivity)
-        sensitivity_spinbox.setDecimals(2)
+        # === 左侧: 方案列表区域 ===
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
 
-        def sync_sensitivity_slider(value):
-            sensitivity_spinbox.setValue(value / 100.0)
+        # 方案列表标题
+        list_title = QLabel("VAD方案")
+        list_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        left_layout.addWidget(list_title)
 
-        def sync_sensitivity_spinbox(value):
-            sensitivity_slider.setValue(int(value * 100))
+        # 方案列表
+        self.vad_profile_list = QListWidget()
+        self.vad_profile_list.currentItemChanged.connect(self._on_vad_profile_selected)
+        left_layout.addWidget(self.vad_profile_list)
 
-        sensitivity_slider.valueChanged.connect(sync_sensitivity_slider)
-        sensitivity_spinbox.valueChanged.connect(sync_sensitivity_spinbox)
+        # 方案操作按钮栏
+        button_layout = QHBoxLayout()
 
-        sensitivity_layout.addWidget(sensitivity_slider)
-        sensitivity_layout.addWidget(sensitivity_spinbox)
-        layout.addRow("敏感度:", sensitivity_layout)
-        self.config_widgets['vad_sensitivity'] = sensitivity_spinbox
+        self.vad_add_button = QPushButton("新增")
+        self.vad_add_button.clicked.connect(self._on_add_vad_profile)
+        button_layout.addWidget(self.vad_add_button)
 
-        # VAD阈值
+        self.vad_delete_button = QPushButton("删除")
+        self.vad_delete_button.clicked.connect(self._on_delete_vad_profile)
+        button_layout.addWidget(self.vad_delete_button)
+
+        self.vad_copy_button = QPushButton("复制")
+        self.vad_copy_button.clicked.connect(self._on_duplicate_vad_profile)
+        button_layout.addWidget(self.vad_copy_button)
+
+        self.vad_rename_button = QPushButton("重命名")
+        self.vad_rename_button.clicked.connect(self._on_rename_vad_profile)
+        button_layout.addWidget(self.vad_rename_button)
+
+        left_layout.addLayout(button_layout)
+        left_widget.setMaximumWidth(250)
+
+        # === 右侧: 参数编辑区域 ===
+        right_widget = QWidget()
+        right_layout = QFormLayout(right_widget)
+
+        # 阈值 (threshold)
         threshold_layout = QHBoxLayout()
         threshold_slider = QSlider(Qt.Horizontal)
         threshold_slider.setRange(0, 100)
-        threshold_slider.setValue(int(self.config.vad_threshold * 100))
         threshold_spinbox = QDoubleSpinBox()
         threshold_spinbox.setRange(0.0, 1.0)
-        threshold_spinbox.setSingleStep(0.1)
-        threshold_spinbox.setValue(self.config.vad_threshold)
-        threshold_spinbox.setDecimals(2)
+        threshold_spinbox.setSingleStep(0.01)
+        threshold_spinbox.setDecimals(3)
 
         def sync_threshold_slider(value):
             threshold_spinbox.setValue(value / 100.0)
-
         def sync_threshold_spinbox(value):
             threshold_slider.setValue(int(value * 100))
 
@@ -483,17 +509,92 @@ class SettingsDialog(QDialog):
 
         threshold_layout.addWidget(threshold_slider)
         threshold_layout.addWidget(threshold_spinbox)
-        layout.addRow("阈值:", threshold_layout)
-        self.config_widgets['vad_threshold'] = threshold_spinbox
+        right_layout.addRow("阈值 (0.0-1.0):", threshold_layout)
+        self.config_widgets['vad_profile_threshold'] = threshold_spinbox
 
-        # VAD窗口大小
-        window_size_spinbox = QDoubleSpinBox()
-        window_size_spinbox.setRange(0.1, 2.0)
-        window_size_spinbox.setSingleStep(0.1)
-        window_size_spinbox.setValue(self.config.vad_window_size)
-        window_size_spinbox.setDecimals(3)
-        layout.addRow("窗口大小(秒):", window_size_spinbox)
-        self.config_widgets['vad_window_size'] = window_size_spinbox
+        # 最小语音持续时间 (min_speech_duration_ms)
+        min_speech_spinbox = QSpinBox()
+        min_speech_spinbox.setRange(10, 5000)
+        min_speech_spinbox.setSingleStep(10)
+        min_speech_spinbox.setSuffix(" ms")
+        right_layout.addRow("最小语音持续时间:", min_speech_spinbox)
+        self.config_widgets['vad_profile_min_speech_duration_ms'] = min_speech_spinbox
+
+        # 最小静音持续时间 (min_silence_duration_ms)
+        min_silence_spinbox = QSpinBox()
+        min_silence_spinbox.setRange(10, 5000)
+        min_silence_spinbox.setSingleStep(10)
+        min_silence_spinbox.setSuffix(" ms")
+        right_layout.addRow("最小静音持续时间:", min_silence_spinbox)
+        self.config_widgets['vad_profile_min_silence_duration_ms'] = min_silence_spinbox
+
+        # 最大语音持续时间 (max_speech_duration_ms)
+        max_speech_spinbox = QSpinBox()
+        max_speech_spinbox.setRange(1000, 60000)
+        max_speech_spinbox.setSingleStep(1000)
+        max_speech_spinbox.setSuffix(" ms")
+        right_layout.addRow("最大语音持续时间:", max_speech_spinbox)
+        self.config_widgets['vad_profile_max_speech_duration_ms'] = max_speech_spinbox
+
+        # 采样率 (sample_rate)
+        sample_rate_combo = QComboBox()
+        sample_rate_combo.addItems(["8000", "16000", "22050", "44100", "48000"])
+        right_layout.addRow("采样率 (Hz):", sample_rate_combo)
+        self.config_widgets['vad_profile_sample_rate'] = sample_rate_combo
+
+        # 窗口大小 (window_size_samples)
+        window_size_spinbox = QSpinBox()
+        window_size_spinbox.setRange(256, 2048)
+        window_size_spinbox.setSingleStep(256)
+        window_size_spinbox.setSuffix(" samples")
+        right_layout.addRow("窗口大小:", window_size_spinbox)
+        self.config_widgets['vad_profile_window_size_samples'] = window_size_spinbox
+
+        # 模型类型 (model)
+        model_combo = QComboBox()
+        model_combo.addItems(["silero_vad", "ten_vad"])
+        right_layout.addRow("模型类型:", model_combo)
+        self.config_widgets['vad_profile_model'] = model_combo
+
+        # 模型路径 (model_path)
+        model_path_layout = QHBoxLayout()
+        model_path_edit = QLineEdit()
+        model_path_browse_button = QPushButton("浏览...")
+
+        def browse_vad_model():
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "选择VAD模型文件",
+                "",
+                "ONNX模型 (*.onnx);;所有文件 (*.*)"
+            )
+            if file_path:
+                model_path_edit.setText(file_path)
+
+        model_path_browse_button.clicked.connect(browse_vad_model)
+        model_path_layout.addWidget(model_path_edit)
+        model_path_layout.addWidget(model_path_browse_button)
+        right_layout.addRow("模型路径:", model_path_layout)
+        self.config_widgets['vad_profile_model_path'] = model_path_edit
+
+        # 使用sherpa-onnx (use_sherpa_onnx)
+        use_sherpa_checkbox = QCheckBox("使用 sherpa-onnx 实现")
+        use_sherpa_checkbox.setChecked(True)
+        right_layout.addRow(use_sherpa_checkbox)
+        self.config_widgets['vad_profile_use_sherpa_onnx'] = use_sherpa_checkbox
+
+        # 添加说明文本
+        help_text = QLabel(
+            "提示: 不同场景可创建不同方案,如\"安静环境\"、\"嘈杂环境\"等。\n"
+            "调整参数以适应您的使用场景,保存后可在主界面快速切换。"
+        )
+        help_text.setStyleSheet("color: gray; font-size: 11px;")
+        help_text.setWordWrap(True)
+        right_layout.addRow(help_text)
+
+        # 组装左右布局
+        main_layout.addWidget(left_widget)
+        main_layout.addWidget(right_widget, stretch=1)
 
         return page
 
@@ -665,13 +766,26 @@ class SettingsDialog(QDialog):
             self.config_widgets['model_path'].setText(self.config.model_path or "")
 
     def _load_vad_settings(self) -> None:
-        """加载VAD设置"""
-        if 'vad_sensitivity' in self.config_widgets:
-            self.config_widgets['vad_sensitivity'].setValue(self.config.vad_sensitivity)
-        if 'vad_threshold' in self.config_widgets:
-            self.config_widgets['vad_threshold'].setValue(self.config.vad_threshold)
-        if 'vad_window_size' in self.config_widgets:
-            self.config_widgets['vad_window_size'].setValue(self.config.vad_window_size)
+        """加载VAD设置 - 加载所有VAD方案到列表"""
+        if self.vad_profile_list is None:
+            return
+
+        # 清空列表
+        self.vad_profile_list.clear()
+
+        # 加载所有VAD方案
+        for profile_id, profile in self.config.vad_profiles.items():
+            item = QListWidgetItem(profile.profile_name)
+            item.setData(Qt.UserRole, profile_id)  # 存储profile_id
+            self.vad_profile_list.addItem(item)
+
+            # 如果是活跃方案,选中它
+            if profile_id == self.config.active_vad_profile_id:
+                self.vad_profile_list.setCurrentItem(item)
+
+        # 如果没有选中任何方案,选中第一个
+        if self.vad_profile_list.currentItem() is None and self.vad_profile_list.count() > 0:
+            self.vad_profile_list.setCurrentRow(0)
 
     def _load_audio_settings(self) -> None:
         """加载音频设置"""
@@ -719,13 +833,37 @@ class SettingsDialog(QDialog):
             self.config.model_path = self.config_widgets['model_path'].text().strip()
 
     def _collect_vad_settings(self) -> None:
-        """收集VAD设置"""
-        if 'vad_sensitivity' in self.config_widgets:
-            self.config.vad_sensitivity = self.config_widgets['vad_sensitivity'].value()
-        if 'vad_threshold' in self.config_widgets:
-            self.config.vad_threshold = self.config_widgets['vad_threshold'].value()
-        if 'vad_window_size' in self.config_widgets:
-            self.config.vad_window_size = self.config_widgets['vad_window_size'].value()
+        """收集VAD设置 - 保存当前编辑的方案参数"""
+        if self.current_editing_profile_id is None:
+            return
+
+        # 从UI控件收集参数
+        profile = self.config.vad_profiles.get(self.current_editing_profile_id)
+        if profile is None:
+            return
+
+        # 更新方案参数
+        if 'vad_profile_threshold' in self.config_widgets:
+            profile.threshold = self.config_widgets['vad_profile_threshold'].value()
+        if 'vad_profile_min_speech_duration_ms' in self.config_widgets:
+            profile.min_speech_duration_ms = float(self.config_widgets['vad_profile_min_speech_duration_ms'].value())
+        if 'vad_profile_min_silence_duration_ms' in self.config_widgets:
+            profile.min_silence_duration_ms = float(self.config_widgets['vad_profile_min_silence_duration_ms'].value())
+        if 'vad_profile_max_speech_duration_ms' in self.config_widgets:
+            profile.max_speech_duration_ms = float(self.config_widgets['vad_profile_max_speech_duration_ms'].value())
+        if 'vad_profile_sample_rate' in self.config_widgets:
+            profile.sample_rate = int(self.config_widgets['vad_profile_sample_rate'].currentText())
+        if 'vad_profile_window_size_samples' in self.config_widgets:
+            profile.window_size_samples = self.config_widgets['vad_profile_window_size_samples'].value()
+        if 'vad_profile_model' in self.config_widgets:
+            profile.model = self.config_widgets['vad_profile_model'].currentText()
+        if 'vad_profile_model_path' in self.config_widgets:
+            profile.model_path = self.config_widgets['vad_profile_model_path'].text().strip() or None
+        if 'vad_profile_use_sherpa_onnx' in self.config_widgets:
+            profile.use_sherpa_onnx = self.config_widgets['vad_profile_use_sherpa_onnx'].isChecked()
+
+        # 更新配置中的方案
+        self.config.vad_profiles[self.current_editing_profile_id] = profile
 
     def _collect_audio_settings(self) -> None:
         """收集音频设置"""
@@ -791,3 +929,241 @@ class SettingsDialog(QDialog):
             return
 
         QMessageBox.information(self, "验证成功", f"模型文件验证通过\n文件大小: {file_size_mb:.1f} MB")
+
+    # ========== VAD方案管理槽函数 ==========
+
+    @Slot()
+    def _on_vad_profile_selected(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
+        """处理VAD方案选择事件
+
+        Args:
+            current: 当前选中的列表项
+            previous: 之前选中的列表项
+        """
+        if current is None:
+            self.current_editing_profile_id = None
+            return
+
+        # 获取选中方案的ID
+        profile_id = current.data(Qt.UserRole)
+        self.current_editing_profile_id = profile_id
+
+        # 加载方案参数到UI
+        profile = self.config.vad_profiles.get(profile_id)
+        if profile is None:
+            logger.warning(f"VAD profile not found: {profile_id}")
+            return
+
+        # 设置UI控件的值
+        if 'vad_profile_threshold' in self.config_widgets:
+            self.config_widgets['vad_profile_threshold'].setValue(profile.threshold)
+        if 'vad_profile_min_speech_duration_ms' in self.config_widgets:
+            self.config_widgets['vad_profile_min_speech_duration_ms'].setValue(int(profile.min_speech_duration_ms))
+        if 'vad_profile_min_silence_duration_ms' in self.config_widgets:
+            self.config_widgets['vad_profile_min_silence_duration_ms'].setValue(int(profile.min_silence_duration_ms))
+        if 'vad_profile_max_speech_duration_ms' in self.config_widgets:
+            self.config_widgets['vad_profile_max_speech_duration_ms'].setValue(int(profile.max_speech_duration_ms))
+        if 'vad_profile_sample_rate' in self.config_widgets:
+            self.config_widgets['vad_profile_sample_rate'].setCurrentText(str(profile.sample_rate))
+        if 'vad_profile_window_size_samples' in self.config_widgets:
+            self.config_widgets['vad_profile_window_size_samples'].setValue(profile.window_size_samples)
+        if 'vad_profile_model' in self.config_widgets:
+            self.config_widgets['vad_profile_model'].setCurrentText(profile.model)
+        if 'vad_profile_model_path' in self.config_widgets:
+            self.config_widgets['vad_profile_model_path'].setText(profile.model_path or "")
+        if 'vad_profile_use_sherpa_onnx' in self.config_widgets:
+            self.config_widgets['vad_profile_use_sherpa_onnx'].setChecked(profile.use_sherpa_onnx)
+
+        logger.debug(f"Loaded VAD profile: {profile.profile_name} ({profile_id})")
+
+    @Slot()
+    def _on_add_vad_profile(self) -> None:
+        """新增VAD方案"""
+        from PySide6.QtWidgets import QInputDialog
+
+        # 弹出对话框输入方案名
+        profile_name, ok = QInputDialog.getText(
+            self,
+            "新增VAD方案",
+            "请输入方案名称:",
+            text="新方案"
+        )
+
+        if not ok or not profile_name.strip():
+            return
+
+        profile_name = profile_name.strip()
+
+        # 检查名称是否重复
+        for profile in self.config.vad_profiles.values():
+            if profile.profile_name == profile_name:
+                QMessageBox.warning(self, "名称重复", f"方案名称'{profile_name}'已存在,请使用其他名称")
+                return
+
+        # 创建新方案(使用ConfigBridge)
+        from src.config.models import VadProfile
+        import uuid
+
+        new_profile = VadProfile.create_default_profile()
+        new_profile.profile_name = profile_name
+        new_profile.profile_id = f"profile_{uuid.uuid4().hex[:8]}"
+
+        # 添加到配置
+        success = self.config_bridge.add_vad_profile(new_profile)
+        if not success:
+            QMessageBox.warning(self, "添加失败", "无法添加VAD方案,请检查日志")
+            return
+
+        # 刷新列表
+        self._load_vad_settings()
+
+        # 选中新添加的方案
+        for i in range(self.vad_profile_list.count()):
+            item = self.vad_profile_list.item(i)
+            if item.data(Qt.UserRole) == new_profile.profile_id:
+                self.vad_profile_list.setCurrentItem(item)
+                break
+
+        logger.info(f"Added new VAD profile: {profile_name} ({new_profile.profile_id})")
+
+    @Slot()
+    def _on_delete_vad_profile(self) -> None:
+        """删除VAD方案"""
+        current_item = self.vad_profile_list.currentItem()
+        if current_item is None:
+            return
+
+        profile_id = current_item.data(Qt.UserRole)
+        profile = self.config.vad_profiles.get(profile_id)
+        if profile is None:
+            return
+
+        # 保护"默认"方案
+        if profile_id == "default":
+            QMessageBox.warning(self, "无法删除", "默认方案不能被删除")
+            return
+
+        # 至少保留一个方案
+        if len(self.config.vad_profiles) <= 1:
+            QMessageBox.warning(self, "无法删除", "必须至少保留一个VAD方案")
+            return
+
+        # 确认删除
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除方案'{profile.profile_name}'吗?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # 删除方案(使用ConfigBridge)
+        success = self.config_bridge.delete_vad_profile(profile_id)
+        if not success:
+            QMessageBox.warning(self, "删除失败", "无法删除VAD方案,请检查日志")
+            return
+
+        # 刷新列表
+        self._load_vad_settings()
+
+        logger.info(f"Deleted VAD profile: {profile.profile_name} ({profile_id})")
+
+    @Slot()
+    def _on_duplicate_vad_profile(self) -> None:
+        """复制VAD方案"""
+        from PySide6.QtWidgets import QInputDialog
+
+        current_item = self.vad_profile_list.currentItem()
+        if current_item is None:
+            return
+
+        source_profile_id = current_item.data(Qt.UserRole)
+        source_profile = self.config.vad_profiles.get(source_profile_id)
+        if source_profile is None:
+            return
+
+        # 弹出对话框输入新方案名
+        new_profile_name, ok = QInputDialog.getText(
+            self,
+            "复制VAD方案",
+            "请输入新方案名称:",
+            text=f"{source_profile.profile_name} 副本"
+        )
+
+        if not ok or not new_profile_name.strip():
+            return
+
+        new_profile_name = new_profile_name.strip()
+
+        # 检查名称是否重复
+        for profile in self.config.vad_profiles.values():
+            if profile.profile_name == new_profile_name:
+                QMessageBox.warning(self, "名称重复", f"方案名称'{new_profile_name}'已存在,请使用其他名称")
+                return
+
+        # 复制方案(使用ConfigBridge)
+        success, new_profile_id, message = self.config_bridge.duplicate_vad_profile(
+            source_profile_id,
+            new_profile_name
+        )
+
+        if not success:
+            QMessageBox.warning(self, "复制失败", message)
+            return
+
+        # 刷新列表
+        self._load_vad_settings()
+
+        # 选中新复制的方案
+        for i in range(self.vad_profile_list.count()):
+            item = self.vad_profile_list.item(i)
+            if item.data(Qt.UserRole) == new_profile_id:
+                self.vad_profile_list.setCurrentItem(item)
+                break
+
+        logger.info(f"Duplicated VAD profile: {source_profile.profile_name} -> {new_profile_name} ({new_profile_id})")
+
+    @Slot()
+    def _on_rename_vad_profile(self) -> None:
+        """重命名VAD方案"""
+        from PySide6.QtWidgets import QInputDialog
+
+        current_item = self.vad_profile_list.currentItem()
+        if current_item is None:
+            return
+
+        profile_id = current_item.data(Qt.UserRole)
+        profile = self.config.vad_profiles.get(profile_id)
+        if profile is None:
+            return
+
+        # 弹出对话框输入新名称
+        new_name, ok = QInputDialog.getText(
+            self,
+            "重命名VAD方案",
+            "请输入新名称:",
+            text=profile.profile_name
+        )
+
+        if not ok or not new_name.strip():
+            return
+
+        new_name = new_name.strip()
+
+        # 检查名称是否重复
+        for pid, p in self.config.vad_profiles.items():
+            if pid != profile_id and p.profile_name == new_name:
+                QMessageBox.warning(self, "名称重复", f"方案名称'{new_name}'已存在,请使用其他名称")
+                return
+
+        # 更新方案名称
+        profile.profile_name = new_name
+        self.config.vad_profiles[profile_id] = profile
+
+        # 更新列表项显示
+        current_item.setText(new_name)
+
+        logger.info(f"Renamed VAD profile {profile_id} to: {new_name}")

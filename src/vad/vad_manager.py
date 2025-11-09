@@ -130,15 +130,15 @@ class VadManager:
 
             if need_reload:
                 # 需要重新加载模型
-                logger.info("Configuration changed, reloading VAD detector...")
+                logger.info("加载VAD detector...")
 
                 # 释放旧检测器（如果存在）
                 if instance._detector:
-                    logger.info(f"Releasing old detector (model: {instance._stats['current_model']})")
+                    logger.info(f"存在老的 vad 检测器 (模型: {instance._stats['current_model']})")
                     instance._release_detector()
 
                 # 加载新检测器
-                logger.info(f"Loading new detector (model: {config.model.value})")
+                logger.info(f"正在加载新的 vad 检测器 (模型: {config.model.value})")
                 start_time = datetime.now()
 
                 instance._detector = VoiceActivityDetector(config)
@@ -151,13 +151,13 @@ class VadManager:
                 instance._stats["last_load_time"] = datetime.now()
                 instance._stats["current_model"] = config.model.value
 
-                logger.info(f"Detector loaded successfully in {load_time:.2f}s "
-                          f"(total loads: {instance._stats['detector_loads']})")
+                logger.info(f"vad 检测器已成功加载，耗时 {load_time:.2f}s "
+                          f"(总加载次数: {instance._stats['detector_loads']})")
             else:
                 # 复用现有检测器
                 instance._stats["detector_reuses"] += 1
-                logger.info(f"Reusing cached detector (reuses: {instance._stats['detector_reuses']}, "
-                          f"model: {instance._stats['current_model']})")
+                logger.info(f"复用缓存的 detector (reuses: {instance._stats['detector_reuses']}, "
+                          f"模型: {instance._stats['current_model']})")
 
             return instance._detector
 

@@ -29,8 +29,8 @@ sys.path.insert(0, str(project_root))
 from src.config.models import Config
 from src.hardware.gpu_detector import GPUDetector
 from src.audio.models import AudioDevice, AudioChunk
-from src.vad.detector import VoiceActivityDetector
-from src.transcription.engine import TranscriptionEngine
+from src.vad import VadManager  # 使用 VAD 管理器
+from src.transcription.engine_manager import TranscriptionEngineManager  # 使用转录引擎管理器
 from src.output.handler import OutputHandler
 from src.utils.logger import setup_logging, get_logger, LogConfig, LogLevel
 
@@ -161,9 +161,9 @@ class PerformanceTestSuite:
         }
 
         try:
-            # 测试VAD初始化时间
+            # 测试VAD初始化时间（使用 VadManager 实现智能复用）
             start_time = time.perf_counter()
-            vad = VoiceActivityDetector(self.config)
+            vad = VadManager.get_detector(self.config)
             results['initialization_time'] = time.perf_counter() - start_time
 
             # 生成测试音频数据
@@ -326,14 +326,14 @@ class PerformanceTestSuite:
             memory_after_gpu = process.memory_info()
             components.append(('gpu_detector', memory_after_gpu))
 
-            # VAD检测器
-            vad = VoiceActivityDetector(self.config)
+            # VAD检测器（使用 VadManager 实现智能复用）
+            vad = VadManager.get_detector(self.config)
             memory_after_vad = process.memory_info()
             components.append(('vad', memory_after_vad))
 
-            # 如果模型文件存在，测试转录引擎
+            # 如果模型文件存在，测试转录引擎（使用 TranscriptionEngineManager 实现智能复用）
             if os.path.exists(self.config.model_path):
-                engine = TranscriptionEngine(self.config)
+                engine = TranscriptionEngineManager.get_engine(self.config)
                 memory_after_engine = process.memory_info()
                 components.append(('transcription_engine', memory_after_engine))
 
@@ -380,16 +380,16 @@ class PerformanceTestSuite:
         }
 
         try:
-            # 创建所有必要组件
+            # 创建所有必要组件（使用管理器实现智能复用）
             components = {
                 'gpu_detector': GPUDetector(),
-                'vad': VoiceActivityDetector(self.config),
+                'vad': VadManager.get_detector(self.config),
                 'output_handler': OutputHandler(self.config)
             }
 
-            # 如果模型文件存在，添加转录引擎
+            # 如果模型文件存在，添加转录引擎（使用 TranscriptionEngineManager 实现智能复用）
             if os.path.exists(self.config.model_path):
-                components['transcription_engine'] = TranscriptionEngine(self.config)
+                components['transcription_engine'] = TranscriptionEngineManager.get_engine(self.config)
 
             # 生成测试音频数据
             sample_rate = 16000

@@ -260,12 +260,11 @@ class SherpaOnnxVAD:
         vad_config.silero_vad.threshold = self.config.threshold
         vad_config.silero_vad.min_silence_duration = self.config.min_silence_duration_ms / 1000.0
         vad_config.silero_vad.min_speech_duration = self.config.min_speech_duration_ms / 1000.0
+        logger.info(f"配置Silero vad_config: threshold={self.config.threshold}, min_silence_duration={self.config.min_silence_duration_ms}ms, min_speech_duration={self.config.min_speech_duration_ms}ms")
         # 检查是否支持最大语音持续时间配置
         if hasattr(vad_config.silero_vad, 'max_speech_duration'):
             vad_config.silero_vad.max_speech_duration = self.config.max_speech_duration_ms / 1000.0
-            logger.info(f"配置Silero VAD: threshold={self.config.threshold}, max_speech_duration={self.config.max_speech_duration_ms}ms")
-        else:
-            logger.info(f"配置Silero VAD: threshold={self.config.threshold} (max_speech_duration将通过状态机处理)")
+            logger.info(f"配置Silero VAD: max_speech_duration={self.config.max_speech_duration_ms}ms")
 
     def _configure_ten_vad(self, vad_config, model_path: str) -> None:
         """
@@ -286,12 +285,12 @@ class SherpaOnnxVAD:
                 vad_config.ten_vad.threshold = self.config.threshold
                 vad_config.ten_vad.min_silence_duration = self.config.min_silence_duration_ms / 1000.0
                 vad_config.ten_vad.min_speech_duration = self.config.min_speech_duration_ms / 1000.0
+                logger.info(f"配置Ten vad_config: threshold={self.config.threshold}, min_silence_duration={self.config.min_silence_duration_ms}ms, min_speech_duration={self.config.min_speech_duration_ms}ms")
+
                 # 检查是否支持最大语音持续时间配置
                 if hasattr(vad_config.ten_vad, 'max_speech_duration'):
                     vad_config.ten_vad.max_speech_duration = self.config.max_speech_duration_ms / 1000.0
-                    logger.info(f"配置Ten VAD (FSMN): threshold={self.config.threshold}, max_speech_duration={self.config.max_speech_duration_ms}ms")
-                else:
-                    logger.info(f"配置Ten VAD (FSMN): threshold={self.config.threshold} (max_speech_duration将通过状态机处理)")
+                    logger.info(f"配置Ten VAD (FSMN):  max_speech_duration={self.config.max_speech_duration_ms}ms")
             else:
                 # 降级到使用Silero配置加载Ten VAD模型
                 logger.warning("sherpa-onnx当前版本不支持专门的Ten VAD配置，使用Silero配置加载, 模型路径可能错误")
@@ -303,8 +302,6 @@ class SherpaOnnxVAD:
                 if hasattr(vad_config.silero_vad, 'max_speech_duration'):
                     vad_config.silero_vad.max_speech_duration = self.config.max_speech_duration_ms / 1000.0
                     logger.info(f"配置Ten VAD (兼容模式): threshold={self.config.threshold}, max_speech_duration={self.config.max_speech_duration_ms}ms")
-                else:
-                    logger.info(f"配置Ten VAD (兼容模式): threshold={self.config.threshold} (max_speech_duration将通过状态机处理)")
         except Exception as e:
             raise ModelLoadError(f"Ten VAD配置失败: {e}")
 

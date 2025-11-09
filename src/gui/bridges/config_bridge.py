@@ -8,7 +8,7 @@ from pathlib import Path
 from dataclasses import asdict
 
 from src.config.manager import ConfigManager
-from src.config.models import Config, SubtitleDisplayConfig
+from src.config.models import Config, SubtitleDisplayConfig, VadProfile
 from src.gui.storage.config_file_manager import ConfigFileManager
 
 logger = logging.getLogger(__name__)
@@ -84,22 +84,17 @@ class ConfigBridge:
 
             if config_file:
                 # 导出到指定文件
-                success, error = self.file_manager.export_config(config_file, config)
-                if not success:
-                    logger.error(f"Export failed: {error}")
-                    return False
+                success = self.file_manager.export_config(config_file, config)
             else:
                 # 保存到默认位置
-                success, error = self.file_manager.save_config(config)
-                if not success:
-                    logger.error(f"Save failed: {error}")
-                    return False
-
-            logger.info("Configuration saved successfully")
+                success = self.file_manager.save_config(config)
+            if not success:
+                return False
+            logger.info("配置保存成功") 
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save config: {e}")
+            logger.error(f"配置保存失败: {e}")
             return False
 
     def update_config(self, updates: Dict[str, Any]) -> Tuple[bool, str]:
@@ -201,8 +196,20 @@ class ConfigBridge:
                 config_copy['subtitle_display'] = SubtitleDisplayConfig(**subtitle_config)
             # 如果已经是SubtitleDisplayConfig对象，保持不变
 
-        # TODO: 如果未来添加其他嵌套配置，在此处理
-        # 例如: AudioConfig, VadConfig等
+        # 处理嵌套的VadProfile字典
+        if 'vad_profiles' in config_copy:
+            vad_profiles = config_copy['vad_profiles']
+            if isinstance(vad_profiles, dict):
+                # 检查是否所有值都已经是VadProfile对象
+                converted_profiles = {}
+                for profile_id, profile_data in vad_profiles.items():
+                    if isinstance(profile_data, dict):
+                        # 将字典转换为VadProfile对象
+                        converted_profiles[profile_id] = VadProfile(**profile_data)
+                    elif isinstance(profile_data, VadProfile):
+                        # 已经是VadProfile对象，直接使用
+                        converted_profiles[profile_id] = profile_data
+                config_copy['vad_profiles'] = converted_profiles
 
         return Config(**config_copy)
 
@@ -218,3 +225,221 @@ class ConfigBridge:
         for key in keys[:-1]:
             d = d.setdefault(key, {})
         d[keys[-1]] = value
+
+    # ========== VAD方案管理方法 ==========
+
+    def add_vad_profile(self, profile: VadProfile) -> Tuple[bool, str]:
+        """
+        添加新的VAD配置方案
+
+        Args:
+            profile: VAD配置方案对象
+
+        Returns:
+            Tuple[bool, str]: (是否成功, 错误消息)
+        """
+        if self._current_config is None:
+            return False, "配置未初始化"
+
+        try:
+            # 验证方案配置
+            profile.validate()
+
+            # 检查方案ID是否已存在
+            if profile.profile_id in self._current_config.vad_profiles:
+                return False, f"方案ID '{profile.profile_id}' 已存在"
+
+            # 检查方案名称是否重复
+            for existing_profile in self._current_config.vad_profiles.values():
+                if existing_profile.profile_name == profile.profile_name:
+                    return False, f"方案名称 '{profile.profile_name}' 已存在"
+
+            # 添加方案
+            self._current_config.vad_profiles[profile.profile_id] = profile
+            logger.info(f"Added VAD profile: {profile.profile_name} ({profile.profile_id})")
+            return True, ""
+
+        except Exception as e:
+            logger.error(f"Failed to add VAD profile: {e}")
+            return False, str(e)
+
+    def update_vad_profile(self, profile_id: str, profile: VadProfile) -> Tuple[bool, str]:
+        """
+        更新VAD配置方案
+
+        Args:
+            profile_id: 要更新的方案ID
+            profile: 新的VAD配置方案对象
+
+        Returns:
+            Tuple[bool, str]: (是否成功, 错误消息)
+        """
+        if self._current_config is None:
+            return False, "配置未初始化"
+
+        try:
+            # 验证方案配置
+            profile.validate()
+
+            # 检查方案是否存在
+            if profile_id not in self._current_config.vad_profiles:
+                return False, f"方案 '{profile_id}' 不存在"
+
+            # 如果方案名称改变，检查新名称是否重复
+            if profile.profile_name != self._current_config.vad_profiles[profile_id].profile_name:
+                for pid, existing_profile in self._current_config.vad_profiles.items():
+                    if pid != profile_id and existing_profile.profile_name == profile.profile_name:
+                        return False, f"方案名称 '{profile.profile_name}' 已存在"
+
+            # 更新方案
+            self._current_config.vad_profiles[profile_id] = profile
+            logger.info(f"Updated VAD profile: {profile.profile_name} ({profile_id})")
+            return True, ""
+
+        except Exception as e:
+            logger.error(f"Failed to update VAD profile: {e}")
+            return False, str(e)
+
+    def delete_vad_profile(self, profile_id: str) -> Tuple[bool, str]:
+        """
+        删除VAD配置方案
+
+        Args:
+            profile_id: 要删除的方案ID
+
+        Returns:
+            Tuple[bool, str]: (是否成功, 错误消息)
+        """
+        if self._current_config is None:
+            return False, "配置未初始化"
+
+        try:
+            # 不允许删除默认方案
+            if profile_id == "default":
+                return False, "不能删除默认方案"
+
+            # 检查方案是否存在
+            if profile_id not in self._current_config.vad_profiles:
+                return False, f"方案 '{profile_id}' 不存在"
+
+            # 如果删除的是活跃方案，切换到默认方案
+            if self._current_config.active_vad_profile_id == profile_id:
+                self._current_config.active_vad_profile_id = "default"
+                logger.info(f"Switched to default profile because active profile was deleted")
+
+            # 删除方案
+            profile_name = self._current_config.vad_profiles[profile_id].profile_name
+            del self._current_config.vad_profiles[profile_id]
+            logger.info(f"Deleted VAD profile: {profile_name} ({profile_id})")
+            return True, ""
+
+        except Exception as e:
+            logger.error(f"Failed to delete VAD profile: {e}")
+            return False, str(e)
+
+    def get_active_vad_profile(self) -> Optional[VadProfile]:
+        """
+        获取当前活跃的VAD方案
+
+        Returns:
+            Optional[VadProfile]: 当前活跃的VAD方案，如果不存在返回None
+        """
+        if self._current_config is None:
+            return None
+
+        try:
+            return self._current_config.get_active_vad_profile()
+        except Exception as e:
+            logger.error(f"Failed to get active VAD profile: {e}")
+            return None
+
+    def set_active_vad_profile(self, profile_id: str) -> Tuple[bool, str]:
+        """
+        设置活跃的VAD方案
+
+        Args:
+            profile_id: VAD方案ID
+
+        Returns:
+            Tuple[bool, str]: (是否成功, 错误消息)
+        """
+        if self._current_config is None:
+            return False, "配置未初始化"
+
+        try:
+            # 检查方案是否存在
+            if profile_id not in self._current_config.vad_profiles:
+                return False, f"方案 '{profile_id}' 不存在"
+
+            # 设置活跃方案
+            self._current_config.set_active_vad_profile(profile_id)
+            profile_name = self._current_config.vad_profiles[profile_id].profile_name
+            logger.info(f"Set active VAD profile: {profile_name} ({profile_id})")
+            return True, ""
+
+        except Exception as e:
+            logger.error(f"Failed to set active VAD profile: {e}")
+            return False, str(e)
+
+    def get_all_vad_profiles(self) -> Dict[str, VadProfile]:
+        """
+        获取所有VAD配置方案
+
+        Returns:
+            Dict[str, VadProfile]: VAD方案字典 {profile_id: VadProfile}
+        """
+        if self._current_config is None:
+            return {}
+
+        return self._current_config.vad_profiles.copy()
+
+    def duplicate_vad_profile(self, source_profile_id: str, new_profile_name: str) -> Tuple[bool, str, Optional[str]]:
+        """
+        复制VAD配置方案
+
+        Args:
+            source_profile_id: 源方案ID
+            new_profile_name: 新方案名称
+
+        Returns:
+            Tuple[bool, str, Optional[str]]: (是否成功, 错误消息, 新方案ID)
+        """
+        if self._current_config is None:
+            return False, "配置未初始化", None
+
+        try:
+            # 检查源方案是否存在
+            if source_profile_id not in self._current_config.vad_profiles:
+                return False, f"源方案 '{source_profile_id}' 不存在", None
+
+            # 检查新方案名称是否重复
+            for existing_profile in self._current_config.vad_profiles.values():
+                if existing_profile.profile_name == new_profile_name:
+                    return False, f"方案名称 '{new_profile_name}' 已存在", None
+
+            # 复制方案
+            source_profile = self._current_config.vad_profiles[source_profile_id]
+            new_profile = VadProfile(
+                profile_name=new_profile_name,
+                threshold=source_profile.threshold,
+                min_speech_duration_ms=source_profile.min_speech_duration_ms,
+                min_silence_duration_ms=source_profile.min_silence_duration_ms,
+                max_speech_duration_ms=source_profile.max_speech_duration_ms,
+                sample_rate=source_profile.sample_rate,
+                model=source_profile.model,
+                model_path=source_profile.model_path,
+                use_sherpa_onnx=source_profile.use_sherpa_onnx,
+                window_size_samples=source_profile.window_size_samples
+            )
+
+            # 添加新方案
+            success, error = self.add_vad_profile(new_profile)
+            if success:
+                logger.info(f"Duplicated VAD profile: {source_profile.profile_name} -> {new_profile_name}")
+                return True, "", new_profile.profile_id
+            else:
+                return False, error, None
+
+        except Exception as e:
+            logger.error(f"Failed to duplicate VAD profile: {e}")
+            return False, str(e), None

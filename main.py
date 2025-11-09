@@ -310,7 +310,7 @@ def run_file_transcription(config):
     print("  ✓ 媒体处理器初始化完成")
 
     # 步骤3: 初始化转录引擎和VAD
-    from src.transcription.engine import TranscriptionEngine
+    from src.transcription.engine_manager import TranscriptionEngineManager  # 使用转录引擎管理器
     from src.transcription.models import TranscriptionConfig, TranscriptionModel, LanguageCode
     from src.vad import VadManager  # 使用 VAD 管理器
     from src.vad.models import VadConfig, VadModel
@@ -326,10 +326,15 @@ def run_file_transcription(config):
         use_gpu=not config.no_gpu if hasattr(config, 'no_gpu') else True
     )
 
-    # 初始化转录引擎
+    # 初始化转录引擎（使用 TranscriptionEngineManager 实现智能复用）
     try:
-        engine = TranscriptionEngine(transcription_config)
+        engine = TranscriptionEngineManager.get_engine(transcription_config)
         print("  ✓ 转录引擎初始化成功")
+
+        # 打印引擎统计信息
+        stats = TranscriptionEngineManager.get_statistics()
+        if stats['engine_reuses'] and stats['engine_reuses'] > 0:
+            print(f"  ℹ 引擎复用: {stats['engine_reuses']} 次")
     except Exception as e:
         print(f"  ✗ 转录引擎初始化失败: {e}")
         sys.exit(1)

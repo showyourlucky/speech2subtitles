@@ -9,7 +9,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QMessageBox, QStatusBar, QMenuBar, QMenu
+    QSplitter, QMessageBox, QStatusBar, QMenuBar, QMenu,
+    QComboBox, QLabel, QGroupBox, QPushButton
 )
 from PySide6.QtCore import Slot, Qt, QThread
 from PySide6.QtGui import QAction, QCloseEvent
@@ -27,6 +28,7 @@ from src.gui.models.gui_models import TranscriptionState, AudioSourceInfo
 from src.gui.dialogs.settings_dialog import SettingsDialog
 from src.gui.dialogs.export_dialog import ExportDialog
 from src.gui.dialogs.history_dialog import HistoryDialog
+from src.gui.dialogs.file_transcription_dialog import FileTranscriptionDialog
 from src.gui.storage.history_manager import HistoryManager
 from src.gui.models.history_models import TranscriptionRecord
 
@@ -67,16 +69,16 @@ class PipelineThread(QThread):
         2. 进入阻塞主循环直到停止
         """
         try:
-            logger.info("Pipeline thread started")
+            logger.info("管道线程已启动")
 
             # Pipeline的run()会内部调用start()并阻塞直到停止
             # start()会调用initialize()初始化所有组件
             self.pipeline.run()
 
         except KeyboardInterrupt:
-            logger.info("Pipeline thread interrupted by user")
+            logger.info("管道线程被用户中断")
         except Exception as e:
-            logger.error(f"Pipeline thread error: {e}", exc_info=True)
+            logger.error(f"管道线程错误: {e}", exc_info=True)
         finally:
             # 确保Pipeline停止
             try:
@@ -123,6 +125,10 @@ class MainWindow(QMainWindow):
         self.status_monitor: Optional[StatusMonitorPanel] = None
         self.result_display: Optional[TranscriptionResultDisplay] = None
 
+        # VAD方案选择器
+        self.vad_profile_selector: Optional[QComboBox] = None
+        self.vad_settings_button: Optional[QPushButton] = None
+
         # 字幕窗口（保留tkinter实现）
         self.subtitle_display = None
 
@@ -141,7 +147,7 @@ class MainWindow(QMainWindow):
         # 应用启动后的初始化
         self._post_init()
 
-        logger.info("MainWindow initialized")
+        logger.info("主窗口已初始化")
 
     def _init_config(self) -> None:
         """初始化配置系统"""
@@ -160,10 +166,10 @@ class MainWindow(QMainWindow):
             if not self.config.input_source:
                 self.config.input_source = "microphone"
 
-            logger.info("Configuration initialized")
+            logger.info("配置初始化完成")
 
         except Exception as e:
-            logger.error(f"Failed to initialize config: {e}")
+            logger.error(f"配置初始化失败: {e}")
             QMessageBox.critical(
                 self,
                 "配置错误",
@@ -217,7 +223,7 @@ class MainWindow(QMainWindow):
         # 创建状态栏
         self._create_status_bar()
 
-        logger.debug("UI setup completed")
+        logger.debug("UI设置完成")
 
     def _create_menu_bar(self) -> None:
         """创建菜单栏"""
@@ -225,6 +231,14 @@ class MainWindow(QMainWindow):
 
         # 文件菜单
         file_menu = menubar.addMenu("文件(&F)")
+
+        # 批量转录文件操作
+        batch_transcription_action = QAction("批量转录文件(&B)...", self)
+        batch_transcription_action.setShortcut("Ctrl+B")
+        batch_transcription_action.triggered.connect(self._show_batch_transcription_dialog)
+        file_menu.addAction(batch_transcription_action)
+
+        file_menu.addSeparator()
 
         # 退出操作
         exit_action = QAction("退出(&X)", self)
@@ -284,6 +298,10 @@ class MainWindow(QMainWindow):
         self.audio_source_selector = AudioSourceSelector()
         layout.addWidget(self.audio_source_selector)
 
+        # VAD方案选择器组件
+        vad_group = self._create_vad_profile_selector()
+        layout.addWidget(vad_group)
+
         # 转录控制面板
         self.control_panel = TranscriptionControlPanel()
         layout.addWidget(self.control_panel)
@@ -296,6 +314,38 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         return panel
+
+    def _create_vad_profile_selector(self) -> QWidget:
+        """创建VAD方案选择器组件
+
+        Returns:
+            QWidget: VAD方案选择组件
+        """
+        group_box = QGroupBox("VAD方案")
+        layout = QVBoxLayout(group_box)
+
+        # 方案选择器和设置按钮的水平布局
+        selector_layout = QHBoxLayout()
+
+        # 方案下拉选择框
+        self.vad_profile_selector = QComboBox()
+        self.vad_profile_selector.setMinimumHeight(30)
+        self.vad_profile_selector.currentIndexChanged.connect(self._on_vad_profile_changed)
+        selector_layout.addWidget(self.vad_profile_selector, stretch=1)
+
+        # 设置按钮（快捷打开VAD设置页）
+        self.vad_settings_button = QPushButton("⚙")
+        self.vad_settings_button.setMaximumWidth(40)
+        self.vad_settings_button.setToolTip("打开VAD设置")
+        self.vad_settings_button.clicked.connect(self._open_vad_settings)
+        selector_layout.addWidget(self.vad_settings_button)
+
+        layout.addLayout(selector_layout)
+
+        # 加载VAD方案列表
+        self._load_vad_profiles()
+
+        return group_box
 
     def _create_right_panel(self) -> QWidget:
         """创建右侧面板（显示区域）"""
@@ -370,7 +420,7 @@ class MainWindow(QMainWindow):
                 self.current_file_index = 0
                 self.is_batch_mode = len(file_paths) > 1
 
-                logger.info(f"Batch mode: {self.is_batch_mode}, files: {len(self.file_queue)}")
+                logger.info(f"批处理模式: {self.is_batch_mode}, 文件数: {len(self.file_queue)}")
 
                 # 开始第一个文件的转录
                 self._start_file_transcription(self.file_queue[0])
@@ -396,7 +446,7 @@ class MainWindow(QMainWindow):
                 return
 
             # 创建Pipeline
-            logger.info("Creating TranscriptionPipeline...")
+            logger.info("创建转录管道e...")
             self.pipeline = TranscriptionPipeline(self.config)
 
             # 创建桥接器
@@ -419,10 +469,10 @@ class MainWindow(QMainWindow):
             self.status_monitor.update_status("✅ 运行中")
             self.status_bar.showMessage("转录已启动")
 
-            logger.info("Transcription started")
+            logger.info("转录开始")
 
         except Exception as e:
-            logger.error(f"Failed to start transcription: {e}")
+            logger.error(f"无法开始转录: {e}")
             QMessageBox.critical(
                 self,
                 "启动失败",
@@ -434,7 +484,7 @@ class MainWindow(QMainWindow):
     def _on_pause_transcription(self) -> None:
         """处理暂停转录请求"""
         # TODO: 实现暂停功能
-        logger.warning("Pause functionality not implemented yet")
+        logger.warning("暂停功能尚未实现")
         QMessageBox.information(self, "功能提示", "暂停功能将在后续版本实现")
 
     def _start_file_transcription(self, file_path: str) -> None:
@@ -452,7 +502,7 @@ class MainWindow(QMainWindow):
                 logger.info(f"Starting file {self.current_file_index + 1}/{len(self.file_queue)}: {file_name}")
             else:
                 self.status_bar.showMessage(f"正在转录: {file_name}")
-                logger.info(f"Starting file transcription: {file_name}")
+                logger.info(f"开始文件转录: {file_name}")
 
             # 更新配置为当前文件
             source_info = AudioSourceInfo(
@@ -472,7 +522,7 @@ class MainWindow(QMainWindow):
                 raise FileNotFoundError(f"模型文件不存在: {self.config.model_path}")
 
             # 创建Pipeline
-            logger.info("Creating TranscriptionPipeline for file...")
+            logger.info("为文件创建 TranscriptionPipeline...")
             self.pipeline = TranscriptionPipeline(self.config)
 
             # 创建桥接器
@@ -495,7 +545,7 @@ class MainWindow(QMainWindow):
             self.status_monitor.update_status("✅ 运行中")
 
         except Exception as e:
-            logger.error(f"Failed to start file transcription: {e}")
+            logger.error(f"无法启动文件转录: {e}")
             QMessageBox.critical(
                 self,
                 "转录失败",
@@ -510,7 +560,7 @@ class MainWindow(QMainWindow):
         self.file_queue.clear()
         self.current_file_index = -1
         self.is_batch_mode = False
-        logger.debug("File queue reset")
+        logger.debug("文件队列重置")
 
     @Slot()
     def _on_stop_transcription(self) -> None:
@@ -546,7 +596,7 @@ class MainWindow(QMainWindow):
             logger.info("Transcription stopped")
 
         except Exception as e:
-            logger.error(f"Failed to stop transcription: {e}")
+            logger.error(f"无法停止转录: {e}")
             QMessageBox.warning(
                 self,
                 "停止警告",
@@ -561,7 +611,7 @@ class MainWindow(QMainWindow):
             source_info: 音频源信息
         """
         self.status_monitor.update_audio_source(str(source_info))
-        logger.debug(f"Audio source changed: {source_info}")
+        logger.debug(f"音频源已更改: {source_info}")
 
     def _update_config_from_ui(self, source_info: AudioSourceInfo) -> None:
         """从UI更新配置
@@ -658,9 +708,10 @@ class MainWindow(QMainWindow):
     def _start_subtitle_display(self) -> None:
         """启动字幕显示（tkinter实现）"""
         try:
-            from src.subtitle_display import SubtitleDisplay
+            # 获取字幕显示组件单例（确保全局只有一个字幕窗口）
+            from src.subtitle_display import get_subtitle_display_instance
 
-            self.subtitle_display = SubtitleDisplay(self.config.subtitle_display)
+            self.subtitle_display = get_subtitle_display_instance(self.config.subtitle_display)
             self.subtitle_display.start()
 
             # 连接信号（将转录结果传递给字幕显示）
@@ -668,10 +719,10 @@ class MainWindow(QMainWindow):
                 # 注意：需要适配信号格式
                 self.pipeline_bridge.new_result.connect(self._update_subtitle)
 
-            logger.info("Subtitle display started")
+            logger.info("字幕显示开始")
 
         except Exception as e:
-            logger.warning(f"Failed to start subtitle display: {e}")
+            logger.warning(f"无法启动字幕显示: {e}")
 
     @Slot(object)
     def _update_subtitle(self, result: TranscriptionResult) -> None:
@@ -687,7 +738,7 @@ class MainWindow(QMainWindow):
                     confidence=result.confidence
                 )
             except Exception as e:
-                logger.warning(f"Failed to update subtitle: {e}")
+                logger.warning(f"更新字幕失败: {e}")
 
     @Slot()
     def _show_about(self) -> None:
@@ -715,11 +766,11 @@ class MainWindow(QMainWindow):
                 self,
                 "确认退出",
                 "转录正在进行中，确定要退出吗？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
 
-            if reply == QMessageBox.No:
+            if reply == QMessageBox.StandardButton.No:
                 event.ignore()
                 return
 
@@ -741,9 +792,33 @@ class MainWindow(QMainWindow):
 
         # 接受关闭事件
         event.accept()
-        logger.info("MainWindow closed")
+        logger.info("主窗口关闭")
 
     # ========== Phase 2 新增方法 ==========
+
+    @Slot()
+    def _show_batch_transcription_dialog(self) -> None:
+        """显示批量文件转录对话框"""
+        try:
+            # 验证模型配置
+            if not self.config.model_path or not Path(self.config.model_path).exists():
+                QMessageBox.warning(
+                    self,
+                    "配置错误",
+                    "请先在设置中配置转录模型路径。\n\n"
+                    "设置 → 偏好设置 → 模型路径"
+                )
+                return
+
+            # 创建并显示批量转录对话框
+            dialog = FileTranscriptionDialog(self.config, self)
+            dialog.exec()
+
+            logger.info("批量转录对话框完成")
+
+        except Exception as e:
+            logger.error(f"无法显示批量转录对话框: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"打开批量转录对话框失败: {e}")
 
     @Slot()
     def _show_settings_dialog(self) -> None:
@@ -768,7 +843,7 @@ class MainWindow(QMainWindow):
         # 更新GPU状态
         self.status_monitor.update_gpu_status(not self.config.use_gpu)
 
-        logger.info("Settings updated from dialog")
+        logger.info("从对话框更新设置")
 
     @Slot()
     def _show_history_panel(self) -> None:
@@ -782,7 +857,7 @@ class MainWindow(QMainWindow):
             dialog = HistoryDialog(self.history_manager, self)
             dialog.show()
 
-            logger.info("History dialog opened")
+            logger.info("历史记录对话框已打开")
 
         except Exception as e:
             logger.error(f"Failed to show history panel: {e}")
@@ -818,12 +893,12 @@ class MainWindow(QMainWindow):
                         "成功",
                         f"已清空 {deleted_count} 条历史记录"
                     )
-                    logger.info(f"Cleared {deleted_count} history records")
+                    logger.info(f"已清空 {deleted_count} 条历史记录")
                 else:
                     QMessageBox.information(self, "提示", "没有历史记录需要清空")
 
         except Exception as e:
-            logger.error(f"Failed to clear history: {e}")
+            logger.error(f"清除历史记录失败: {e}")
             QMessageBox.critical(self, "错误", f"清空历史记录失败: {e}")
 
     @Slot()
@@ -868,7 +943,7 @@ class MainWindow(QMainWindow):
             dialog.exec()
 
         except Exception as e:
-            logger.error(f"Failed to export current transcription: {e}")
+            logger.error(f"当前转录结果导出失败: {e}")
             QMessageBox.critical(self, "导出失败", f"导出当前转录时发生错误:\n{e}")
 
     @Slot()
@@ -876,14 +951,14 @@ class MainWindow(QMainWindow):
         """处理转录完成事件（保存历史记录）"""
         try:
             if not self.history_manager:
-                logger.debug("History manager not available, skipping save")
+                logger.debug("历史记录不可用，跳过保存")
                 return
 
             # 收集转录结果
             full_text = self.result_display.get_full_text()
 
             if not full_text or not full_text.strip():
-                logger.debug("No transcription text to save")
+                logger.debug("没有要保存的转录文本")
                 return
 
             # 创建历史记录
@@ -914,14 +989,14 @@ class MainWindow(QMainWindow):
             # 保存到数据库
             record_id = self.history_manager.add_record(record)
 
-            logger.info(f"Transcription saved to history: ID={record_id}")
+            logger.info(f"转录已保存到历史记录: ID={record_id}")
 
             # 检查是否需要继续处理文件队列
             if self.is_batch_mode and self.file_queue:
                 self._process_next_file()
 
         except Exception as e:
-            logger.error(f"Failed to save transcription history: {e}")
+            logger.error(f"保存转录历史记录失败: {e}")
             # 即使保存失败，也继续处理队列
             if self.is_batch_mode and self.file_queue:
                 self._process_next_file()
@@ -936,7 +1011,7 @@ class MainWindow(QMainWindow):
             if self.current_file_index < len(self.file_queue):
                 next_file = self.file_queue[self.current_file_index]
 
-                logger.info(f"Processing next file: {self.current_file_index + 1}/{len(self.file_queue)}")
+                logger.info(f"处理下一个文件: {self.current_file_index + 1}/{len(self.file_queue)}")
 
                 # 清理当前Pipeline
                 if self.pipeline:
@@ -956,7 +1031,7 @@ class MainWindow(QMainWindow):
             else:
                 # 所有文件转录完成
                 total_files = len(self.file_queue)
-                logger.info(f"All {total_files} files transcribed successfully")
+                logger.info(f"总共 {total_files} 个文件转录成功")
 
                 # 更新UI（在清理状态之前）
                 self.control_panel.set_state(TranscriptionState.STOPPED)
@@ -975,7 +1050,7 @@ class MainWindow(QMainWindow):
                 )
 
         except Exception as e:
-            logger.error(f"Failed to process next file: {e}")
+            logger.error(f"处理下一个文件失败: {e}")
             QMessageBox.critical(
                 self,
                 "转录错误",
@@ -985,3 +1060,97 @@ class MainWindow(QMainWindow):
             self._reset_file_queue()
             self.control_panel.set_state(TranscriptionState.ERROR)
             self.audio_source_selector.set_enabled(True)
+
+    # ========== VAD方案管理相关方法 ==========
+
+    def _load_vad_profiles(self) -> None:
+        """加载VAD方案列表到下拉框"""
+        if self.vad_profile_selector is None:
+            return
+
+        # 清空下拉框
+        self.vad_profile_selector.clear()
+
+        # 加载所有VAD方案
+        for profile_id, profile in self.config.vad_profiles.items():
+            self.vad_profile_selector.addItem(profile.profile_name, profile_id)
+
+        # 选中活跃方案
+        active_profile_id = self.config.active_vad_profile_id
+        for i in range(self.vad_profile_selector.count()):
+            if self.vad_profile_selector.itemData(i) == active_profile_id:
+                self.vad_profile_selector.setCurrentIndex(i)
+                break
+
+        logger.debug(f"已加载 {len(self.config.vad_profiles)} 个 VAD 配置文件, 正在使用 {active_profile_id} 方案")
+
+    @Slot(int)
+    def _on_vad_profile_changed(self, index: int) -> None:
+        """处理VAD方案切换
+
+        Args:
+            index: 新选中的索引
+        """
+        if index < 0:
+            return
+
+        profile_id = self.vad_profile_selector.itemData(index)
+        if profile_id is None or profile_id == self.config.active_vad_profile_id:
+            return
+
+        # 如果Pipeline正在运行,提示需要重启
+        if self.pipeline is not None and hasattr(self.pipeline, 'is_running') and self.pipeline.is_running:
+            QMessageBox.information(
+                self,
+                "VAD方案切换",
+                "VAD方案已切换,将在下次启动转录时生效。\n如需立即生效,请先停止当前转录。"
+            )
+
+        # 更新活跃方案ID
+        success, error_msg = self.config_bridge.set_active_vad_profile(profile_id)
+        if not success:
+            QMessageBox.warning(self, "切换失败", f"无法切换VAD方案: {error_msg}")
+            # 恢复原选择
+            for i in range(self.vad_profile_selector.count()):
+                if self.vad_profile_selector.itemData(i) == self.config.active_vad_profile_id:
+                    self.vad_profile_selector.setCurrentIndex(i)
+                    break
+            return
+
+        profile_name = self.vad_profile_selector.currentText()
+        logger.info(f"VAD 配置文件切换为: {profile_name} ({profile_id})")
+        self.status_bar.showMessage(f"已切换到VAD方案: {profile_name}", 3000)
+
+    @Slot()
+    def _open_vad_settings(self) -> None:
+        """打开VAD设置对话框(直接跳转到VAD页面)"""
+        try:
+            dialog = SettingsDialog(self.config, self.config_bridge, self)
+
+            # 跳转到VAD设置页面(索引2: 通用0, 模型1, VAD2)
+            if hasattr(dialog, 'nav_list') and dialog.nav_list is not None:
+                dialog.nav_list.setCurrentRow(2)
+
+            # 连接设置变更信号
+            dialog.settings_changed.connect(self._on_settings_changed_vad)
+
+            dialog.exec()
+
+        except Exception as e:
+            logger.error(f"无法打开 VAD 设置对话框: {e}")
+            QMessageBox.critical(self, "错误", f"打开VAD设置失败:\n{e}")
+
+    @Slot(object)
+    def _on_settings_changed_vad(self, new_config: Config) -> None:
+        """处理VAD设置变更
+
+        Args:
+            new_config: 新的配置对象
+        """
+        # 重新加载配置
+        self.config = new_config
+
+        # 刷新VAD方案列表
+        self._load_vad_profiles()
+
+        logger.info("设置对话框更新 VAD 设置")

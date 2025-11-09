@@ -259,7 +259,7 @@ class OutputHandler:
             logging.warning("字幕显示功能将不可用，请检查配置参数")
             return
 
-        # 第4步：创建字幕显示组件实例
+        # 第4步：创建/获取字幕显示组件单例实例
         try:
             logging.info("正在初始化字幕显示组件...")
             logging.debug(f"字幕配置: 位置={self.subtitle_display_config.position}, "
@@ -267,8 +267,9 @@ class OutputHandler:
                          f"大小={self.subtitle_display_config.font_size}px, "
                          f"透明度={self.subtitle_display_config.opacity}")
 
-            # 创建字幕显示组件
-            self.subtitle_display = SubtitleDisplay(self.subtitle_display_config)
+            # 获取字幕显示组件单例（确保全局只有一个字幕窗口）
+            from src.subtitle_display import get_subtitle_display_instance
+            self.subtitle_display = get_subtitle_display_instance(self.subtitle_display_config)
 
             logging.info("字幕显示组件初始化成功")
             logging.info(f"字幕窗口位置: {self.subtitle_display_config.position}")

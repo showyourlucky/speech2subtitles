@@ -92,6 +92,12 @@ class SubtitleGenerator:
 
 #### BatchProcessor - 批量处理器
 ```python
+# 回调函数类型定义
+OnFileStart = Callable[[int, int, str], None]          # (file_index, total_files, filename)
+OnFileProgress = Callable[[int, float], None]          # (file_index, progress_percent)
+OnSegment = Callable[[Segment], None]                  # (segment)
+OnFileComplete = Callable[[str, str, float, float], None]  # (file_path, subtitle_file, duration, rtf)
+
 class BatchProcessor:
     """批量文件处理协调器"""
 
@@ -102,17 +108,36 @@ class BatchProcessor:
         output_dir: Optional[Path] = None,
         subtitle_format: str = "srt",
         keep_temp: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        # 新增: 回调参数用于GUI进度显示
+        on_progress: Optional[OnFileProgress] = None,
+        on_segment: Optional[OnSegment] = None,
+        cancel_event: Optional[threading.Event] = None,
+        file_index: int = 0
     ) -> Dict[str, Any]
         # 处理单个文件
+        # 返回: {"success": bool, "file": str, "subtitle_file": str,
+        #        "segments": List[Segment], "segments_count": int,
+        #        "audio_duration": float, "convert_time": float,
+        #        "transcribe_time": float, "subtitle_time": float,
+        #        "total_time": float, "rtf": float, "error": str}
 
     def process_files(
         file_paths: List[Path],
         transcription_engine,
         vad_detector,
-        ...
+        output_dir: Optional[Path] = None,
+        subtitle_format: str = "srt",
+        on_file_start: Optional[OnFileStart] = None,
+        on_file_progress: Optional[OnFileProgress] = None,
+        on_segment: Optional[OnSegment] = None,
+        on_file_complete: Optional[OnFileComplete] = None,
+        cancel_event: Optional[threading.Event] = None,
+        continue_on_error: bool = True
     ) -> Dict[str, Any]
         # 批量处理多个文件
+        # 返回: {"total": int, "success": int, "failed": int,
+        #        "errors": List[Tuple[str, str]], "results": List[Dict]}
 
     def process_directory(
         dir_path: Path,
@@ -123,6 +148,13 @@ class BatchProcessor:
     ) -> Dict[str, Any]
         # 处理目录下所有媒体文件
 ```
+
+**回调接口说明** (2025-11-10新增):
+- `on_progress`: 进度回调,用于更新进度条 (0-100)
+- `on_segment`: 片段回调,用于实时预览转录结果
+- `on_file_start`: 文件开始回调,通知开始处理第N个文件
+- `on_file_complete`: 文件完成回调,提供文件处理统计
+- `cancel_event`: 取消事件,通过设置此事件可以中断处理
 
 ## 关键依赖和配置
 
@@ -277,6 +309,52 @@ stats = processor.process_directory(
 )
 ```
 
+### GUI集成 - 带进度回调 (2025-11-10新增)
+```python
+import threading
+from PySide6.QtCore import Signal, QThread
+
+class TranscriptionWorker(QThread):
+    """GUI转录工作线程"""
+    file_progress = Signal(int, float)  # (file_index, progress)
+    segment_received = Signal(object)   # (segment)
+    file_completed = Signal(str, str, float, float)  # (file, subtitle, duration, rtf)
+
+    def __init__(self, file_paths, processor, engine, vad):
+        super().__init__()
+        self.file_paths = file_paths
+        self.processor = processor
+        self.engine = engine
+        self.vad = vad
+        self.cancel_event = threading.Event()
+
+    def run(self):
+        """运行批量处理"""
+        results = self.processor.process_files(
+            file_paths=self.file_paths,
+            transcription_engine=self.engine,
+            vad_detector=self.vad,
+            output_dir=Path("subtitles/"),
+            # 连接回调到Qt信号
+            on_file_progress=lambda idx, prog: self.file_progress.emit(idx, prog),
+            on_segment=lambda seg: self.segment_received.emit(seg),
+            on_file_complete=lambda f, s, d, r: self.file_completed.emit(f, s, d, r),
+            cancel_event=self.cancel_event,
+            continue_on_error=True
+        )
+
+    def cancel(self):
+        """取消处理"""
+        self.cancel_event.set()
+
+# 在GUI中使用
+worker = TranscriptionWorker(files, processor, engine, vad)
+worker.file_progress.connect(update_progress_bar)
+worker.segment_received.connect(display_segment)
+worker.file_completed.connect(update_statistics)
+worker.start()
+```
+
 ### FFmpeg环境检查
 ```python
 from src.media import MediaConverter
@@ -324,6 +402,11 @@ A: 单个文件错误不会中断批量处理,会继续处理下一个文件,最
 - `CLAUDE.md` - 模块文档 (本文件)
 
 ## 变更日志 (Changelog)
+- **2025-11-10**: BatchProcessor添加回调接口支持,实现GUI批量转录功能
+  - 新增 `on_progress`, `on_segment`, `on_file_start`, `on_file_complete` 回调
+  - 新增 `cancel_event` 支持取消操作
+  - 新增 `BatchProcessorCancelled` 异常类
+  - `process_file()` 返回值增加 `segments` 字段用于GUI显示
 - **2025-10-21**: 创建媒体处理模块,实现FFmpeg集成、字幕生成和批量处理功能
 - **参考实现**: `tests/generate-subtitles.py` (Sherpa-ONNX官方示例)
 

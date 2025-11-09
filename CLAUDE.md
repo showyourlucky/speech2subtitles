@@ -20,6 +20,24 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 # Speech2Subtitles 实时语音转录系统
 
 ## 变更日志 (Changelog)
+- **2025-11-10**: 实现GUI批量文件转录功能
+  - BatchProcessor添加回调接口(`on_progress`, `on_segment`, `on_file_start`, `on_file_complete`)
+  - 新增FileTranscriptionDialog对话框,支持批量文件处理
+  - 实时显示转录进度和预览(最近50条segment)
+  - 自动生成字幕文件(SRT/VTT格式)
+  - 支持取消操作和错误恢复
+  - MainWindow添加"批量转录文件"菜单项(Ctrl+B)
+  - 相关文档: [src/media/CLAUDE.md](./src/media/CLAUDE.md), [src/gui/CLAUDE.md](./src/gui/CLAUDE.md)
+- **2025-11-10**: 为字幕显示组件实现单例模式
+  - 实现双重检查锁定的线程安全单例模式
+  - 添加 `get_subtitle_display_instance()` 工厂方法
+  - 覆盖 `__new__()` 确保向后兼容（旧式调用自动返回单例）
+  - 支持配置热更新（`update_config()` 方法）
+  - 添加 `reset_subtitle_display_instance()` 用于测试和重置
+  - 实现资源自动清理（atexit处理器 + `_cleanup()` 方法）
+  - 更新 OutputHandler 和 MainWindow 使用单例接口
+  - 添加19个单元测试，全部通过
+  - 解决多组件同时初始化导致的多字幕窗口问题
 - **2025-11-07**: 为GUI文件选择添加复选框批量删除功能
   - 文件列表项添加复选框支持
   - 新增"全选"/"取消全选"按钮

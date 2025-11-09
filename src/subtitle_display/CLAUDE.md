@@ -523,8 +523,127 @@ class OutputHandler:
 ```
 ---
 
-**模块状态**: ✅ 完全功能正常
-**最后更新**: 2025-11-01
+## 单例模式实现 (2025-11-10)
+
+### 设计目标
+
+确保整个应用程序生命周期内只有一个 `SubtitleDisplay` 实例，解决多组件同时初始化导致的多窗口问题。
+
+### 核心实现
+
+#### 1. 工厂方法（推荐使用）
+```python
+from src.subtitle_display import get_subtitle_display_instance
+
+# 获取或创建单例实例
+config = SubtitleDisplayConfig(enabled=True, position="bottom")
+display = get_subtitle_display_instance(config)
+```
+
+#### 2. 向后兼容的直接实例化
+```python
+# 旧式调用方式仍然有效，会自动返回单例
+display = SubtitleDisplay(config)
+```
+
+### 单例管理
+
+#### 重置单例（测试或强制重新初始化）
+```python
+from src.subtitle_display import reset_subtitle_display_instance
+
+# 清理现有单例并释放资源
+reset_subtitle_display_instance()
+
+# 下次调用会创建新实例
+display = get_subtitle_display_instance(config)
+```
+
+#### 配置更新
+```python
+# 单例已存在时，配置会自动更新
+new_config = SubtitleDisplayConfig(enabled=True, position="top", font_size=30)
+display = get_subtitle_display_instance(new_config)  # 更新配置
+
+# 或直接调用更新方法
+display.update_config(new_config)
+```
+
+### 技术细节
+
+#### 线程安全保证
+- **双重检查锁定 (Double-Checked Locking)**：第一次检查避免锁竞争，第二次检查确保并发安全
+- **threading.Lock**：确保多线程场景下只创建一个实例
+- **原子操作**：配置更新和实例创建都是原子的
+
+#### 资源清理
+- **atexit 处理器**：应用退出时自动清理单例资源
+- **_cleanup() 方法**：集中处理GUI线程停止和资源释放
+- **__del__() 保险**：对象销毁时的双重保险清理
+
+#### 降级策略
+```python
+# 单例初始化失败时，自动降级到多实例模式并记录警告
+try:
+    display = get_subtitle_display_instance(config)
+except Exception as e:
+    logger.warning("单例初始化失败，降级到多实例模式")
+    # 返回独立实例，不阻塞应用
+```
+
+### 测试覆盖
+
+位置：`tests/subtitle_display/test_singleton.py`
+
+**测试类别**：
+1. **基本行为**：单例创建、重用、直接实例化
+2. **线程安全**：并发初始化测试（10线程）
+3. **配置更新**：动态配置更新、热更新
+4. **重置功能**：清理、重新初始化
+5. **向后兼容**：旧式API兼容性
+6. **错误处理**：初始化失败降级、清理错误处理
+7. **资源管理**：cleanup方法、缺失实现处理
+8. **公共接口**：start/stop/show_subtitle/clear_subtitle委托
+
+**测试统计**：19个测试，100%通过
+
+### 实际使用示例
+
+#### 在 OutputHandler 中使用
+```python
+# src/output/handler.py:270-272
+from src.subtitle_display import get_subtitle_display_instance
+
+self.subtitle_display = get_subtitle_display_instance(self.subtitle_display_config)
+```
+
+#### 在 MainWindow 中使用
+```python
+# src/gui/main_window.py:712-714
+from src.subtitle_display import get_subtitle_display_instance
+
+self.subtitle_display = get_subtitle_display_instance(self.config.subtitle_display)
+```
+
+### 性能影响
+
+- **首次调用**：与原实现相同（需要创建GUI线程和窗口）
+- **后续调用**：几乎零开销（仅检查单例是否存在）
+- **内存占用**：减少（避免多个GUI线程和窗口）
+- **并发性能**：第一次检查无锁，快速路径优化
+
+### 注意事项
+
+1. **测试隔离**：单元测试需要使用 `reset_subtitle_display_instance()` 重置状态
+2. **配置热更新限制**：部分配置（如GUI线程参数）可能无法热更新，需要重置
+3. **日志级别**：单例重用在 DEBUG 级别记录，首次创建在 INFO 级别
+4. **降级模式**：单例失败时自动降级，不影响应用可用性
+
+---
+
+**模块状态**: ✅ 完全功能正常 + 单例模式
+**最后更新**: 2025-11-10
 **核心实现**: ThreadSafeSubtitleDisplay (线程安全GUI) + SimpleSubtitleDisplay (控制台降级)
-**线程安全**: ✅ 完全解决tkinter线程问题
-**用户体验**: ✅ 流畅的桌面悬浮字幕窗口
+**单例管理**: ✅ 双重检查锁定 + 配置热更新 + 资源自动清理
+**线程安全**: ✅ 完全解决tkinter线程问题 + 并发单例创建安全
+**用户体验**: ✅ 流畅的桌面悬浮字幕窗口 + 避免多窗口混乱

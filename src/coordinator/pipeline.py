@@ -262,18 +262,23 @@ class TranscriptionPipeline:
                 self.audio_capture.add_callback(self._on_audio_data)
 
             # 3. 初始化VAD检测器：语音活动检测，过滤静音段
-            # 将VAD窗口大小从秒转换为采样点数
-            vad_window_samples = int(self.config.vad_window_size * self.config.sample_rate)
+            # 从活跃的VAD方案中获取配置
+            active_profile_id = self.config.active_vad_profile_id
+            active_profile = self.config.vad_profiles.get(active_profile_id)
 
-            vad_config = VadConfig(
-                model=VadModel.SILERO,                                       # 使用Silero V5 VAD模型
-                threshold=self.config.vad_threshold,                            # VAD敏感度阈值
-                window_size_samples=vad_window_samples,                         # VAD检测窗口大小（采样点数）
-                sample_rate=self.config.sample_rate,                            # 与音频采样率保持一致
-                #min_speech_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 500,  # 基于敏感度的语音持续时间
-                #min_silence_duration_ms=VadConstants.DEFAULT_SENSITIVITY * 200, # 基于敏感度的静音持续时间
-                return_confidence=True                                          # 返回置信度分数
-            )
+            if active_profile is None:
+                logger.warning(f"Active VAD profile '{active_profile_id}' not found, using default")
+                # 如果活跃方案不存在,使用默认方案
+                from src.config.models import VadProfile
+                active_profile = VadProfile.create_default_profile()
+
+            # 使用活跃方案的to_vad_config()方法转换为VadConfig
+            vad_config = active_profile.to_vad_config()
+            logger.info(f"Using VAD profile: {active_profile.profile_name} ({active_profile_id})")
+            logger.debug(f"VAD config: threshold={vad_config.threshold}, "
+                        f"min_speech={vad_config.min_speech_duration_ms}ms, "
+                        f"max_speech={vad_config.max_speech_duration_ms}ms")
+
             # 使用 VadManager 实现智能复用，避免重复加载模型
             self.vad_detector = VadManager.get_detector(vad_config)
             self.vad_detector.add_callback(self._on_vad_result)  # 注册VAD结果回调
