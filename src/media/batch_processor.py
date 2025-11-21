@@ -575,6 +575,10 @@ class BatchProcessor:
             on_file_progress: 文件进度回调 (file_index, progress_percent)
             on_segment: Segment回调 (segment), 用于实时预览
             on_file_complete: 文件完成回调 (file_path, subtitle_file, duration, rtf)
+                IMPORTANT: subtitle_file使用空字符串("")表示失败状态
+                - 成功: subtitle_file为字幕文件路径字符串
+                - 失败/异常: subtitle_file为空字符串"", duration=0.0, rtf=0.0
+                - 取消: 不触发此回调，BatchProcessorCancelled异常会被抛出到调用方
             cancel_event: 取消事件
             continue_on_error: 遇到错误是否继续处理后续文件
 
@@ -641,23 +645,55 @@ class BatchProcessor:
                         )
                 else:
                     error_count += 1
-                    errors.append(
-                        (str(file_path), result.get("error", "Unknown error"))
+                    error_detail = result.get("error", "Unknown error")
+                    errors.append((str(file_path), error_detail))
+
+                    # 增强日志：提供更多失败上下文
+                    logger.warning(
+                        f"文件处理失败: {file_path.name} - {error_detail} "
+                        f"(第 {i}/{total_files} 个文件)"
                     )
+
+                    # 修复: 失败时也调用完成回调（传递空字符串和0值表示失败）
+                    if on_file_complete:
+                        on_file_complete(
+                            result["file"],
+                            "",  # 空字符串表示失败,没有字幕文件
+                            0.0,  # 音频时长未知
+                            0.0,  # RTF未知
+                        )
 
             except BatchProcessorCancelled:
                 # 用户取消,直接抛出
-                logger.info(f"批量处理被取消: {file_path.name}")
+                logger.info(
+                    f"批量处理被取消: {file_path.name} "
+                    f"(已处理 {i}/{total_files} 个文件, "
+                    f"成功 {success_count}, 失败 {error_count})"
+                )
+                # 取消不触发on_file_complete，由GUI Worker独立处理（见file_transcription_dialog.py Line 136-138）
                 raise
 
             except Exception as e:
                 error_count += 1
                 error_msg = str(e)
                 errors.append((str(file_path), error_msg))
-                logger.error(f"文件处理异常: {file_path.name}, {error_msg}")
+                logger.error(
+                    f"文件处理异常: {file_path.name} - {error_msg} "
+                    f"(第 {i}/{total_files} 个文件)",
+                    exc_info=True  # 包含完整的异常堆栈信息
+                )
 
                 if verbose:
                     print(f"  ✗ 异常: {error_msg}")
+
+                # 修复: 异常时也调用完成回调（传递空字符串和0值表示失败）
+                if on_file_complete:
+                    on_file_complete(
+                        str(file_path),
+                        "",  # 空字符串表示异常,没有字幕文件
+                        0.0,  # 音频时长未知
+                        0.0,  # RTF未知
+                    )
 
                 # 如果不继续处理,则抛出异常
                 if not continue_on_error:

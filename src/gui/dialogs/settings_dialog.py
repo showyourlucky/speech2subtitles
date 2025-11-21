@@ -77,8 +77,14 @@ class SettingsDialog(QDialog):
         self.vad_add_button: Optional[QPushButton] = None
         self.vad_delete_button: Optional[QPushButton] = None
         self.vad_copy_button: Optional[QPushButton] = None
-        self.vad_rename_button: Optional[QPushButton] = None
-        self.current_editing_profile_id: Optional[str] = None  # 当前正在编辑的方案ID
+        self.current_editing_profile_id: Optional[str] = None  # 当前正在编辑的VAD方案ID
+
+        # 模型方案管理组件
+        self.model_profile_list: Optional[QListWidget] = None
+        self.model_add_button: Optional[QPushButton] = None
+        self.model_delete_button: Optional[QPushButton] = None
+        self.model_copy_button: Optional[QPushButton] = None
+        self.current_editing_model_profile_id: Optional[str] = None  # 当前正在编辑的模型方案ID
 
         # 配置控件引用（用于收集设置）
         self.config_widgets: Dict[str, Any] = {}
@@ -406,12 +412,60 @@ class SettingsDialog(QDialog):
         return page
 
     def _create_model_page(self) -> QWidget:
-        """创建模型配置页"""
+        """创建模型方案管理页面
+
+        布局:
+            左侧: 模型方案列表 + 操作按钮(新增/删除/复制)
+            右侧: 选中方案的参数编辑区域
+        """
         page = QWidget()
-        layout = QFormLayout(page)
+        main_layout = QHBoxLayout(page)
+
+        # === 左侧: 方案列表区域 ===
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 方案列表标题
+        list_title = QLabel("模型方案")
+        list_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        left_layout.addWidget(list_title)
+
+        # 方案列表
+        self.model_profile_list = QListWidget()
+        self.model_profile_list.currentItemChanged.connect(self._on_model_profile_selected)
+        left_layout.addWidget(self.model_profile_list)
+
+        # 方案操作按钮栏
+        button_layout = QHBoxLayout()
+
+        self.model_add_button = QPushButton("新增")
+        self.model_add_button.clicked.connect(self._on_add_model_profile)
+        button_layout.addWidget(self.model_add_button)
+
+        self.model_delete_button = QPushButton("删除")
+        self.model_delete_button.clicked.connect(self._on_delete_model_profile)
+        button_layout.addWidget(self.model_delete_button)
+
+        self.model_copy_button = QPushButton("复制")
+        self.model_copy_button.clicked.connect(self._on_duplicate_model_profile)
+        button_layout.addWidget(self.model_copy_button)
+
+
+        left_layout.addLayout(button_layout)
+        left_widget.setMaximumWidth(250)
+
+        # === 右侧: 参数编辑区域 ===
+        right_widget = QWidget()
+        right_layout = QFormLayout(right_widget)
+
+        # 方案名称
+        profile_name_edit = QLineEdit()
+        right_layout.addRow("方案名称:", profile_name_edit)
+        self.config_widgets['model_profile_name'] = profile_name_edit
 
         # 模型路径
-        model_layout = QHBoxLayout()
+        model_path_layout = QHBoxLayout()
         model_path_edit = QLineEdit()
         browse_button = QPushButton("浏览...")
 
@@ -426,16 +480,42 @@ class SettingsDialog(QDialog):
                 model_path_edit.setText(file_path)
 
         browse_button.clicked.connect(browse_model)
-        model_layout.addWidget(model_path_edit)
-        model_layout.addWidget(browse_button)
+        model_path_layout.addWidget(model_path_edit)
+        model_path_layout.addWidget(browse_button)
+        right_layout.addRow("模型路径:", model_path_layout)
+        self.config_widgets['model_profile_path'] = model_path_edit
 
-        layout.addRow("模型路径:", model_layout)
-        self.config_widgets['model_path'] = model_path_edit
+        # 描述
+        description_edit = QLineEdit()
+        description_edit.setPlaceholderText("可选: 模型描述信息")
+        right_layout.addRow("描述:", description_edit)
+        self.config_widgets['model_profile_description'] = description_edit
 
-        # 模型验证按钮
-        validate_button = QPushButton("验证模型")
-        validate_button.clicked.connect(lambda: self._validate_model(model_path_edit.text()))
-        layout.addRow(validate_button)
+        # 支持的语言
+        languages_edit = QLineEdit()
+        languages_edit.setPlaceholderText("可选: 例如 zh,en,ja,ko,yue")
+        right_layout.addRow("支持语言:", languages_edit)
+        self.config_widgets['model_profile_languages'] = languages_edit
+
+        # 验证模型按钮
+        validate_button = QPushButton("验证模型文件")
+        validate_button.clicked.connect(self._on_validate_model_file)
+        right_layout.addRow("", validate_button)
+
+        # 说明文本
+        help_label = QLabel(
+            "提示:\n"
+            "• 支持的模型格式: .onnx, .bin\n"
+            "• 支持语言用逗号分隔,例如: zh,en,ja\n"
+            "• 修改后需点击'保存'按钮保存配置"
+        )
+        help_label.setStyleSheet("color: gray; font-size: 11px;")
+        help_label.setWordWrap(True)
+        right_layout.addRow(help_label)
+
+        # 添加左右面板到主布局
+        main_layout.addWidget(left_widget)
+        main_layout.addWidget(right_widget)
 
         return page
 
@@ -443,7 +523,7 @@ class SettingsDialog(QDialog):
         """创建VAD方案管理页面
 
         布局:
-            左侧: VAD方案列表 + 操作按钮(新增/删除/复制/重命名)
+            左侧: VAD方案列表 + 操作按钮(新增/删除/复制)
             右侧: 选中方案的参数编辑区域
         """
         page = QWidget()
@@ -479,9 +559,6 @@ class SettingsDialog(QDialog):
         self.vad_copy_button.clicked.connect(self._on_duplicate_vad_profile)
         button_layout.addWidget(self.vad_copy_button)
 
-        self.vad_rename_button = QPushButton("重命名")
-        self.vad_rename_button.clicked.connect(self._on_rename_vad_profile)
-        button_layout.addWidget(self.vad_rename_button)
 
         left_layout.addLayout(button_layout)
         left_widget.setMaximumWidth(250)
@@ -489,6 +566,12 @@ class SettingsDialog(QDialog):
         # === 右侧: 参数编辑区域 ===
         right_widget = QWidget()
         right_layout = QFormLayout(right_widget)
+
+
+        # 方案名称
+        profile_name_edit = QLineEdit()
+        right_layout.addRow("方案名称:", profile_name_edit)
+        self.config_widgets['vad_profile_name'] = profile_name_edit
 
         # 阈值 (threshold)
         threshold_layout = QHBoxLayout()
@@ -761,9 +844,26 @@ class SettingsDialog(QDialog):
         pass
 
     def _load_model_settings(self) -> None:
-        """加载模型设置"""
-        if 'model_path' in self.config_widgets:
-            self.config_widgets['model_path'].setText(self.config.model_path or "")
+        """加载模型设置 - 加载所有模型方案到列表"""
+        if self.model_profile_list is None:
+            return
+
+        # 清空列表
+        self.model_profile_list.clear()
+
+        # 加载所有模型方案
+        for profile_id, profile in self.config.model_profiles.items():
+            item = QListWidgetItem(profile.profile_name)
+            item.setData(Qt.UserRole, profile_id)  # 存储profile_id
+            self.model_profile_list.addItem(item)
+
+            # 如果是活跃方案,选中它
+            if profile_id == self.config.active_model_profile_id:
+                self.model_profile_list.setCurrentItem(item)
+
+        # 如果没有选中任何方案,选中第一个
+        if self.model_profile_list.currentItem() is None and self.model_profile_list.count() > 0:
+            self.model_profile_list.setCurrentRow(0)
 
     def _load_vad_settings(self) -> None:
         """加载VAD设置 - 加载所有VAD方案到列表"""
@@ -828,9 +928,75 @@ class SettingsDialog(QDialog):
         pass
 
     def _collect_model_settings(self) -> None:
-        """收集模型设置"""
-        if 'model_path' in self.config_widgets:
-            self.config.model_path = self.config_widgets['model_path'].text().strip()
+        """收集模型设置 - 保存当前编辑的方案参数"""
+        if self.current_editing_model_profile_id is None:
+            return
+
+        # 从UI控件收集参数
+        profile = self.config.model_profiles.get(self.current_editing_model_profile_id)
+        if profile is None:
+            logger.warning(f"Cannot collect settings: model profile {self.current_editing_model_profile_id} not found")
+            return
+
+        # 更新方案名称 - 添加重复校验
+        if 'model_profile_name' in self.config_widgets:
+            new_profile_name = self.config_widgets['model_profile_name'].text().strip()
+
+            # 检查方案名是否发生变化
+            if new_profile_name != profile.profile_name:
+                # 检查新名称是否与其他方案重复
+                for pid, existing_profile in self.config.model_profiles.items():
+                    if pid != self.current_editing_model_profile_id and existing_profile.profile_name == new_profile_name:
+                        QMessageBox.warning(
+                            self,
+                            "名称重复",
+                            f"方案名称'{new_profile_name}'已存在,请使用其他名称"
+                        )
+                        # 恢复原名称到UI
+                        self.config_widgets['model_profile_name'].setText(profile.profile_name)
+                        return
+
+            profile.profile_name = new_profile_name
+
+        # 更新模型路径
+        if 'model_profile_path' in self.config_widgets:
+            profile.model_path = self.config_widgets['model_profile_path'].text().strip()
+
+        # 更新描述
+        if 'model_profile_description' in self.config_widgets:
+            description_text = self.config_widgets['model_profile_description'].text().strip()
+            profile.description = description_text if description_text else None
+
+        # 更新支持的语言
+        if 'model_profile_languages' in self.config_widgets:
+            languages_text = self.config_widgets['model_profile_languages'].text().strip()
+            if languages_text:
+                # 解析逗号分隔的语言列表
+                languages = [lang.strip() for lang in languages_text.split(',') if lang.strip()]
+                profile.supported_languages = languages if languages else None
+            else:
+                profile.supported_languages = None
+
+        # 更新时间戳
+        from datetime import datetime
+        profile.updated_at = datetime.now()
+
+        # 保存到配置
+        self.config.model_profiles[self.current_editing_model_profile_id] = profile
+
+        # 同步更新 model_path（向后兼容）
+        if self.current_editing_model_profile_id == self.config.active_model_profile_id:
+            self.config.model_path = profile.model_path
+
+        # 如果方案名称发生变化,刷新模型方案列表（同步到UI）
+        if 'model_profile_name' in self.config_widgets:
+            current_item = self.model_profile_list.currentItem()
+            if current_item and current_item.data(Qt.UserRole) == self.current_editing_model_profile_id:
+                # 只更新列表项文本,不触发selection change事件
+                current_item.setText(profile.profile_name)
+                logger.debug(f"Updated model profile list item: {profile.profile_name}")
+
+        logger.debug(f"Collected model profile settings: {self.current_editing_model_profile_id}")
 
     def _collect_vad_settings(self) -> None:
         """收集VAD设置 - 保存当前编辑的方案参数"""
@@ -842,7 +1008,25 @@ class SettingsDialog(QDialog):
         if profile is None:
             return
 
-        # 更新方案参数
+        # 更新方案名称 - 添加重复校验
+        if 'vad_profile_name' in self.config_widgets:
+            new_profile_name = self.config_widgets['vad_profile_name'].text().strip()
+
+            # 检查方案名是否发生变化
+            if new_profile_name != profile.profile_name:
+                # 检查新名称是否与其他方案重复
+                for pid, existing_profile in self.config.vad_profiles.items():
+                    if pid != self.current_editing_profile_id and existing_profile.profile_name == new_profile_name:
+                        QMessageBox.warning(
+                            self,
+                            "名称重复",
+                            f"方案名称'{new_profile_name}'已存在,请使用其他名称"
+                        )
+                        # 恢复原名称到UI
+                        self.config_widgets['vad_profile_name'].setText(profile.profile_name)
+                        return
+
+            profile.profile_name = new_profile_name
         if 'vad_profile_threshold' in self.config_widgets:
             profile.threshold = self.config_widgets['vad_profile_threshold'].value()
         if 'vad_profile_min_speech_duration_ms' in self.config_widgets:
@@ -864,6 +1048,14 @@ class SettingsDialog(QDialog):
 
         # 更新配置中的方案
         self.config.vad_profiles[self.current_editing_profile_id] = profile
+
+        # 如果方案名称发生变化,刷新VAD方案列表（同步到UI）
+        if 'vad_profile_name' in self.config_widgets:
+            current_item = self.vad_profile_list.currentItem()
+            if current_item and current_item.data(Qt.UserRole) == self.current_editing_profile_id:
+                # 只更新列表项文本,不触发selection change事件
+                current_item.setText(profile.profile_name)
+                logger.debug(f"Updated VAD profile list item: {profile.profile_name}")
 
     def _collect_audio_settings(self) -> None:
         """收集音频设置"""
@@ -924,9 +1116,7 @@ class SettingsDialog(QDialog):
 
         # 简单的文件大小检查
         file_size_mb = model_file.stat().st_size / (1024 * 1024)
-        if file_size_mb < 1:
-            QMessageBox.warning(self, "验证失败", "模型文件过小，可能不是有效的模型文件")
-            return
+        
 
         QMessageBox.information(self, "验证成功", f"模型文件验证通过\n文件大小: {file_size_mb:.1f} MB")
 
@@ -955,6 +1145,8 @@ class SettingsDialog(QDialog):
             return
 
         # 设置UI控件的值
+        if 'vad_profile_name' in self.config_widgets:
+            self.config_widgets['vad_profile_name'].setText(profile.profile_name)
         if 'vad_profile_threshold' in self.config_widgets:
             self.config_widgets['vad_profile_threshold'].setValue(profile.threshold)
         if 'vad_profile_min_speech_duration_ms' in self.config_widgets:
@@ -1002,11 +1194,10 @@ class SettingsDialog(QDialog):
 
         # 创建新方案(使用ConfigBridge)
         from src.config.models import VadProfile
-        import uuid
 
         new_profile = VadProfile.create_default_profile()
         new_profile.profile_name = profile_name
-        new_profile.profile_id = f"profile_{uuid.uuid4().hex[:8]}"
+        new_profile.profile_id = f"profile_{profile_name}"
 
         # 添加到配置
         success = self.config_bridge.add_vad_profile(new_profile)
@@ -1126,26 +1317,195 @@ class SettingsDialog(QDialog):
 
         logger.info(f"Duplicated VAD profile: {source_profile.profile_name} -> {new_profile_name} ({new_profile_id})")
 
+    # ==================== 模型方案管理事件处理 ====================
+
+    @Slot(QListWidgetItem, QListWidgetItem)
+    def _on_model_profile_selected(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
+        """处理模型方案选择事件
+
+        Args:
+            current: 当前选中的列表项
+            previous: 之前选中的列表项
+        """
+        if current is None:
+            self.current_editing_model_profile_id = None
+            return
+
+        # 获取选中方案的ID
+        profile_id = current.data(Qt.UserRole)
+        self.current_editing_model_profile_id = profile_id
+
+        # 加载方案参数到UI
+        profile = self.config.model_profiles.get(profile_id)
+        if profile is None:
+            logger.warning(f"Model profile not found: {profile_id}")
+            return
+
+        # 设置UI控件的值
+        if 'model_profile_name' in self.config_widgets:
+            self.config_widgets['model_profile_name'].setText(profile.profile_name)
+        if 'model_profile_path' in self.config_widgets:
+            self.config_widgets['model_profile_path'].setText(profile.model_path)
+        if 'model_profile_description' in self.config_widgets:
+            self.config_widgets['model_profile_description'].setText(profile.description or "")
+        if 'model_profile_languages' in self.config_widgets:
+            # 将语言列表转换为逗号分隔的字符串
+            languages_str = ",".join(profile.supported_languages) if profile.supported_languages else ""
+            self.config_widgets['model_profile_languages'].setText(languages_str)
+
+        logger.debug(f"Model profile selected: {profile_id}")
+
     @Slot()
-    def _on_rename_vad_profile(self) -> None:
-        """重命名VAD方案"""
+    def _on_add_model_profile(self) -> None:
+        """新增模型方案"""
         from PySide6.QtWidgets import QInputDialog
 
-        current_item = self.vad_profile_list.currentItem()
+        # 弹出对话框输入方案名
+        profile_name, ok = QInputDialog.getText(
+            self,
+            "新增模型方案",
+            "请输入方案名称:",
+            text="新模型"
+        )
+
+        if not ok or not profile_name.strip():
+            return
+
+        profile_name = profile_name.strip()
+
+        # 检查名称是否重复
+        for profile in self.config.model_profiles.values():
+            if profile.profile_name == profile_name:
+                QMessageBox.warning(self, "名称重复", f"方案名称'{profile_name}'已存在,请使用其他名称")
+                return
+
+        # 弹出文件选择对话框选择模型文件
+        model_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择模型文件",
+            "",
+            "ONNX模型 (*.onnx);;二进制模型 (*.bin);;所有文件 (*.*)"
+        )
+
+        if not model_path:
+            return
+
+        # 验证模型文件
+        from src.config.models import ModelProfile
+        try:
+            # 创建临时profile进行验证
+            temp_profile = ModelProfile(
+                profile_name=profile_name,
+                model_path=model_path
+            )
+            temp_profile.validate()
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "模型验证失败",
+                f"无法添加模型方案:\n{str(e)}"
+            )
+            return
+
+        # 创建新方案(使用ConfigBridge)
+        import uuid
+        new_profile = ModelProfile(
+            profile_id=f"model_{uuid.uuid4().hex[:8]}",
+            profile_name=profile_name,
+            model_path=model_path,
+            description="",
+            supported_languages=None
+        )
+
+        # 添加到配置
+        success = self.config_bridge.add_model_profile(new_profile)
+        if not success:
+            QMessageBox.warning(self, "添加失败", "无法添加模型方案,请检查日志")
+            return
+
+        # 重新加载配置
+        self.config = self.config_bridge.get_config()
+
+        # 刷新列表
+        self._load_model_settings()
+
+        # 选中新添加的方案
+        for i in range(self.model_profile_list.count()):
+            item = self.model_profile_list.item(i)
+            if item.data(Qt.UserRole) == new_profile.profile_id:
+                self.model_profile_list.setCurrentItem(item)
+                break
+
+        logger.info(f"Added new model profile: {new_profile.profile_id}")
+
+    @Slot()
+    def _on_delete_model_profile(self) -> None:
+        """删除模型方案"""
+        current_item = self.model_profile_list.currentItem()
         if current_item is None:
             return
 
         profile_id = current_item.data(Qt.UserRole)
-        profile = self.config.vad_profiles.get(profile_id)
+        profile = self.config.model_profiles.get(profile_id)
         if profile is None:
             return
 
-        # 弹出对话框输入新名称
+        # 保护"默认"方案
+        if profile_id == "default":
+            QMessageBox.warning(self, "无法删除", "默认方案不能被删除")
+            return
+
+        # 至少保留一个方案
+        if len(self.config.model_profiles) <= 1:
+            QMessageBox.warning(self, "无法删除", "必须至少保留一个模型方案")
+            return
+
+        # 确认删除
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除方案'{profile.profile_name}'吗?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # 删除方案(使用ConfigBridge)
+        success = self.config_bridge.delete_model_profile(profile_id)
+        if not success:
+            QMessageBox.warning(self, "删除失败", "无法删除模型方案,请检查日志")
+            return
+
+        # 重新加载配置
+        self.config = self.config_bridge.get_config()
+
+        # 刷新列表
+        self._load_model_settings()
+
+        logger.info(f"Deleted model profile: {profile_id}")
+
+    @Slot()
+    def _on_duplicate_model_profile(self) -> None:
+        """复制模型方案"""
+        from PySide6.QtWidgets import QInputDialog
+
+        current_item = self.model_profile_list.currentItem()
+        if current_item is None:
+            return
+
+        profile_id = current_item.data(Qt.UserRole)
+        source_profile = self.config.model_profiles.get(profile_id)
+        if source_profile is None:
+            return
+
+        # 弹出对话框输入新方案名称
         new_name, ok = QInputDialog.getText(
             self,
-            "重命名VAD方案",
-            "请输入新名称:",
-            text=profile.profile_name
+            "复制模型方案",
+            "请输入新方案名称:",
+            text=f"{source_profile.profile_name} - 副本"
         )
 
         if not ok or not new_name.strip():
@@ -1154,16 +1514,119 @@ class SettingsDialog(QDialog):
         new_name = new_name.strip()
 
         # 检查名称是否重复
-        for pid, p in self.config.vad_profiles.items():
-            if pid != profile_id and p.profile_name == new_name:
+        for profile in self.config.model_profiles.values():
+            if profile.profile_name == new_name:
                 QMessageBox.warning(self, "名称重复", f"方案名称'{new_name}'已存在,请使用其他名称")
                 return
 
-        # 更新方案名称
-        profile.profile_name = new_name
-        self.config.vad_profiles[profile_id] = profile
+        # 创建方案副本
+        from src.config.models import ModelProfile
+        import uuid
+        from datetime import datetime
 
-        # 更新列表项显示
-        current_item.setText(new_name)
+        new_profile = ModelProfile(
+            profile_id=f"model_{uuid.uuid4().hex[:8]}",
+            profile_name=new_name,
+            model_path=source_profile.model_path,
+            description=source_profile.description,
+            supported_languages=source_profile.supported_languages.copy() if source_profile.supported_languages else None,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
 
-        logger.info(f"Renamed VAD profile {profile_id} to: {new_name}")
+        # 添加到配置
+        success = self.config_bridge.add_model_profile(new_profile)
+        if not success:
+            QMessageBox.warning(self, "复制失败", "无法复制模型方案,请检查日志")
+            return
+
+        # 重新加载配置
+        self.config = self.config_bridge.get_config()
+
+        # 刷新列表
+        self._load_model_settings()
+
+        # 选中新方案
+        for i in range(self.model_profile_list.count()):
+            item = self.model_profile_list.item(i)
+            if item.data(Qt.UserRole) == new_profile.profile_id:
+                self.model_profile_list.setCurrentItem(item)
+                break
+
+        logger.info(f"Duplicated model profile {profile_id} to {new_profile.profile_id}")
+
+    @Slot()
+    def _on_validate_model_file(self) -> None:
+        """验证模型文件"""
+        if 'model_profile_path' not in self.config_widgets:
+            return
+
+        model_path = self.config_widgets['model_profile_path'].text().strip()
+
+        if not model_path:
+            QMessageBox.warning(self, "验证失败", "请先输入模型文件路径")
+            return
+
+        # 验证模型文件
+        from pathlib import Path
+        import os
+
+        try:
+            path = Path(model_path)
+
+            # 检查文件存在
+            if not path.exists():
+                QMessageBox.warning(self, "验证失败", f"文件不存在:\n{model_path}")
+                return
+
+            # 检查是文件而非目录
+            if not path.is_file():
+                QMessageBox.warning(self, "验证失败", f"路径不是文件:\n{model_path}")
+                return
+
+            # 检查文件扩展名
+            from src.config.models import ModelConstants
+            if path.suffix.lower() not in ModelConstants.SUPPORTED_EXTENSIONS:
+                QMessageBox.warning(
+                    self,
+                    "验证失败",
+                    f"不支持的文件格式: {path.suffix}\n"
+                    f"支持的格式: {', '.join(ModelConstants.SUPPORTED_EXTENSIONS)}"
+                )
+                return
+
+            # 检查文件大小
+            file_size_mb = path.stat().st_size / (1024 * 1024)
+            if file_size_mb < 1:
+                QMessageBox.warning(
+                    self,
+                    "验证失败",
+                    f"文件过小 ({file_size_mb:.2f}MB)\n"
+                    f"可能不是有效的模型文件"
+                )
+                return
+
+            # 检查文件权限
+            if not os.access(path, os.R_OK):
+                QMessageBox.warning(self, "验证失败", f"没有读取权限:\n{model_path}")
+                return
+
+            # 验证通过
+            QMessageBox.information(
+                self,
+                "验证成功",
+                f"模型文件验证通过!\n\n"
+                f"路径: {model_path}\n"
+                f"格式: {path.suffix}\n"
+                f"大小: {file_size_mb:.2f}MB"
+            )
+
+            logger.info(f"Model file validated: {model_path}")
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "验证错误",
+                f"验证过程中发生错误:\n{str(e)}"
+            )
+            logger.error(f"Model validation error: {e}", exc_info=True)

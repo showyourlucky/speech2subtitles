@@ -501,16 +501,31 @@ class FileTranscriptionDialog(QDialog):
     def _on_file_completed(
         self, file_path: str, subtitle_file: str, duration: float, rtf: float
     ):
-        """文件处理完成"""
-        self.success_count += 1
+        """文件处理完成（成功或失败）
+
+        Args:
+            file_path: 源文件路径
+            subtitle_file: 字幕文件路径（失败时为空字符串）
+            duration: 音频时长（失败时为0.0）
+            rtf: Real-Time Factor（失败时为0.0）
+        """
+        # 根据subtitle_file是否为空判断成功/失败
+        if subtitle_file:
+            # 成功
+            self.success_count += 1
+            logger.info(
+                f"文件完成: {Path(file_path).name} -> {Path(subtitle_file).name}, RTF={rtf:.2f}"
+            )
+        else:
+            # 失败
+            self.error_count += 1
+            logger.warning(f"文件处理失败: {Path(file_path).name}")
+
+        # 更新总进度条
         self.total_progress_bar.setValue(self.success_count + self.error_count)
 
         # 更新统计
         self._update_stats()
-
-        logger.info(
-            f"文件完成: {Path(file_path).name} -> {Path(subtitle_file).name}, RTF={rtf:.2f}"
-        )
 
     @Slot(dict)
     def _on_all_completed(self, stats: dict):

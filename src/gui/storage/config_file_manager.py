@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from src.config.models import Config, SubtitleDisplayConfig, VadProfile
+from src.config.models import Config, SubtitleDisplayConfig, VadProfile, ModelProfile
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,13 @@ class ConfigFileManager:
                 for profile_id, profile in config.vad_profiles.items()
             },
             "active_vad_profile_id": config.active_vad_profile_id,
+
+            # 模型方案配置 (新增)
+            "model_profiles": {
+                profile_id: profile.to_dict()
+                for profile_id, profile in config.model_profiles.items()
+            },
+            "active_model_profile_id": config.active_model_profile_id,
         }
 
         return config_dict
@@ -228,6 +235,28 @@ class ConfigFileManager:
         # 获取活跃方案ID
         active_vad_profile_id = config_dict.get("active_vad_profile_id", "default")
 
+        # 处理模型方案配置 (新增)
+        model_profiles_dict = config_dict.get("model_profiles", {})
+        model_profiles = {}
+
+        if model_profiles_dict:
+            # 反序列化每个模型方案
+            for profile_id, profile_data in model_profiles_dict.items():
+                model_profiles[profile_id] = ModelProfile.from_dict(profile_data)
+        else:
+            # 如果没有模型方案配置,从 model_path 创建默认方案
+            from src.config.models import migrate_legacy_config
+            # 创建临时配置对象进行迁移
+            temp_config = Config(
+                model_path=config_dict.get("model_path", ""),
+                input_source=config_dict.get("input_source")
+            )
+            migrate_legacy_config(temp_config)
+            model_profiles = temp_config.model_profiles
+
+        # 获取活跃模型方案ID
+        active_model_profile_id = config_dict.get("active_model_profile_id", "default")
+
         # 创建Config对象
         config = Config(
             # 核心配置
@@ -266,6 +295,10 @@ class ConfigFileManager:
             # VAD方案配置 (新增)
             vad_profiles=vad_profiles,
             active_vad_profile_id=active_vad_profile_id,
+
+            # 模型方案配置 (新增)
+            model_profiles=model_profiles,
+            active_model_profile_id=active_model_profile_id,
         )
 
         return config

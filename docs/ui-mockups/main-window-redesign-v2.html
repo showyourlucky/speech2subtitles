@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech2Subtitles - GUI主窗口重新设计 v2.0</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+            background: hsl(0, 0%, 96%);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .mockup-window {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            overflow: hidden;
+            margin-bottom: 40px;
+        }
+
+        /* 窗口标题栏 */
+        .title-bar {
+            background: linear-gradient(to bottom, #f0f0f0, #e0e0e0);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .title-bar-title {
+            font-size: 13px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .title-bar-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .title-bar-btn {
+            width: 16px;
+            height: 16px;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        .btn-minimize { background: #ffbd2e; }
+        .btn-maximize { background: #28c940; }
+        .btn-close { background: #ff5f57; }
+
+        /* 菜单栏 */
+        .menu-bar {
+            background: #f8f8f8;
+            padding: 6px 12px;
+            border-bottom: 1px solid #ddd;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .menu-bar span {
+            margin-right: 20px;
+            cursor: pointer;
+        }
+
+        .menu-bar span:hover {
+            color: #0078d4;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        /* 顶部控制区 */
+        .top-control-area {
+            padding: 16px;
+            border-bottom: 2px solid #e0e0e0;
+            background: #fafafa;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .audio-source-combo {
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+            min-width: 150px;
+            cursor: pointer;
+        }
+
+        .audio-source-combo:hover {
+            border-color: #0078d4;
+        }
+
+        /* 音频电平显示 */
+        .audio-level-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .audio-level-label {
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 90px;
+        }
+
+        .audio-level-bar {
+            flex: 1;
+            max-width: 300px;
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid #ccc;
+        }
+
+        .audio-level-fill {
+            height: 100%;
+            background: linear-gradient(to right, #28c940, #00bcf2);
+            transition: width 0.15s;
+            border-radius: 4px;
+        }
+
+        .audio-level-value {
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #0078d4;
+            color: white;
+            padding: 8px 24px;
+        }
+
+        .btn-primary:hover {
+            background: #005a9e;
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid #ccc;
+            color: #666;
+        }
+
+        .btn-icon:hover {
+            background: #f0f0f0;
+            border-color: #0078d4;
+            color: #0078d4;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 文件选择面板 */
+        .file-panel {
+            margin-top: 12px;
+            padding: 16px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            animation: slideDown 0.2s ease-out;
+        }
+
+        .file-panel.hidden {
+            display: none;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .file-panel-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .file-list {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 12px;
+            min-height: 80px;
+            max-height: 150px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            background: white;
+            border-radius: 3px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .file-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .file-item-icon {
+            font-size: 16px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* 结果显示区 */
+        .result-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            overflow: hidden;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .result-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .result-display {
+            flex: 1;
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 16px;
+            overflow-y: auto;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            color: #333;
+        }
+
+        .result-line {
+            margin-bottom: 8px;
+        }
+
+        .timestamp {
+            color: #0078d4;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        /* 高级设置面板 */
+        .advanced-panel {
+            margin-top: 12px;
+            padding: 16px;
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            animation: slideDown 0.2s ease-out;
+        }
+
+        .advanced-panel.collapsed {
+            display: none;
+        }
+
+        .advanced-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .advanced-header:hover {
+            color: #0078d4;
+        }
+
+        .advanced-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 12px 16px;
+            align-items: center;
+        }
+
+        .advanced-label {
+            font-size: 13px;
+            color: #666;
+            text-align: right;
+        }
+
+        .advanced-value {
+            font-size: 13px;
+            color: #333;
+        }
+
+        .advanced-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(to right, #0078d4, #00bcf2);
+            transition: width 0.3s;
+        }
+
+        /* 状态栏 */
+        .status-bar {
+            background: #f0f0f0;
+            padding: 6px 16px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            gap: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-separator {
+            color: #ccc;
+        }
+
+        .status-gpu {
+            color: #28c940;
+            font-weight: 600;
+        }
+
+        /* 模式切换演示 */
+        .mode-demo {
+            margin-top: 40px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .mode-demo h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .mode-btn {
+            padding: 10px 20px;
+            border: 2px solid #0078d4;
+            background: white;
+            color: #0078d4;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .mode-btn:hover {
+            background: #0078d4;
+            color: white;
+        }
+
+        .mode-btn.active {
+            background: #0078d4;
+            color: white;
+        }
+
+        /* 响应式 */
+        @media (max-width: 900px) {
+            .container {
+                padding: 10px;
+            }
+
+            .main-content {
+                height: 500px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Speech2Subtitles - GUI主窗口重新设计 v2.0</h1>
+
+        <!-- 默认视图 (麦克风模式) -->
+        <div class="mockup-window" id="mockup-microphone">
+            <div class="title-bar">
+                <div class="title-bar-title">Speech2Subtitles</div>
+                <div class="title-bar-controls">
+                    <div class="title-bar-btn btn-minimize"></div>
+                    <div class="title-bar-btn btn-maximize"></div>
+                    <div class="title-bar-btn btn-close"></div>
+                </div>
+            </div>
+
+            <div class="menu-bar">
+                <span>文件(F)</span>
+                <span>设置(S)</span>
+                <span>历史记录(H)</span>
+                <span>帮助(H)</span>
+            </div>
+
+            <div class="main-content">
+                <!-- 顶部控制区 -->
+                <div class="top-control-area">
+                    <div class="control-row">
+                        <label class="control-label">
+                            🎤 音频源:
+                        </label>
+                        <select class="audio-source-combo" id="audio-source-select">
+                            <option value="microphone" selected>🎤 麦克风</option>
+                            <option value="system">🔊 系统音频</option>
+                            <option value="file">📁 文件</option>
+                        </select>
+                        <div class="spacer"></div>
+                        <button class="btn btn-icon" onclick="toggleAdvanced()">⚙️ 高级设置</button>
+                        <button class="btn btn-primary">▶️ 开始转录</button>
+                        <button class="btn btn-secondary" disabled>⏸ 暂停</button>
+                        <button class="btn btn-secondary" disabled>⏹ 停止</button>
+                    </div>
+
+                    <!-- 音频电平显示 -->
+                    <div class="audio-level-container">
+                        <div class="audio-level-label">🎙️ 音频电平:</div>
+                        <div class="audio-level-bar">
+                            <div class="audio-level-fill" id="audio-level-fill" style="width: 75%;"></div>
+                        </div>
+                        <div class="audio-level-value">75%</div>
+                    </div>
+
+                    <!-- 高级设置面板 (默认收起) -->
+                    <div class="advanced-panel collapsed" id="advanced-panel">
+                        <div class="advanced-header">⚙️ 高级设置</div>
+                        <div class="advanced-grid">
+                            <div class="advanced-label">VAD方案:</div>
+                            <div class="advanced-control">
+                                <select class="audio-source-combo" style="min-width: 120px;">
+                                    <option selected>默认</option>
+                                    <option>高灵敏度</option>
+                                    <option>低灵敏度</option>
+                                </select>
+                                <button class="btn btn-secondary" style="padding: 6px 12px;">管理方案...</button>
+                            </div>
+
+                            <div class="advanced-label">转录模型:</div>
+                            <div class="advanced-control">
+                                <select class="audio-source-combo" style="min-width: 200px;">
+                                    <option selected>sense-voice-zh-en-ja-ko-yue</option>
+                                    <option>whisper-medium</option>
+                                    <option>whisper-large</option>
+                                </select>
+                                <button class="btn btn-secondary" style="padding: 6px 12px;">浏览...</button>
+                            </div>
+
+                            <div class="advanced-label">GPU加速:</div>
+                            <div class="advanced-value">
+                                <label>
+                                    <input type="checkbox" checked> ✅ 已启用 (CUDA)
+                                </label>
+                            </div>
+
+                            <div class="advanced-label">采样率:</div>
+                            <div class="advanced-value">16000 Hz</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 结果显示区 -->
+                <div class="result-area">
+                    <div class="result-header">
+                        <div class="result-title">📝 转录结果</div>
+                        <div class="result-actions">
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">清空</button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">导出</button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">复制</button>
+                        </div>
+                    </div>
+                    <div class="result-display">
+                        <div class="result-line">
+                            <span class="timestamp">[00:00:12]</span>
+                            大家好,欢迎收看这期视频
+                        </div>
+                        <div class="result-line">
+                            <span class="timestamp">[00:00:25]</span>
+                            今天我们来讲解如何使用Speech2Subtitles进行实时语音转录
+                        </div>
+                        <div class="result-line">
+                            <span class="timestamp">[00:00:38]</span>
+                            这个工具非常强大,支持多种音频输入源
+                        </div>
+                        <div class="result-line">
+                            <span class="timestamp">[00:00:52]</span>
+                            包括麦克风、系统音频和文件转录
+                        </div>
+                        <div class="result-line">
+                            <span class="timestamp">[00:01:05]</span>
+                            界面简洁清晰,操作非常方便
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 状态栏 -->
+            <div class="status-bar">
+                <div class="status-item">状态: 就绪</div>
+                <span class="status-separator">|</span>
+                <div class="status-item">转录: 5句</div>
+                <span class="status-separator">|</span>
+                <div class="status-item">时长: 00:01:05</div>
+                <span class="status-separator">|</span>
+                <div class="status-item status-gpu">GPU: ✅ CUDA</div>
+                <span class="status-separator">|</span>
+                <div class="status-item">VAD: 默认</div>
+            </div>
+        </div>
+
+        <!-- 模式切换演示 -->
+        <div class="mode-demo">
+            <h2>🎨 交互演示 - 点击切换不同模式</h2>
+            <div class="mode-buttons">
+                <button class="mode-btn active" onclick="showMode('microphone')">🎤 麦克风模式</button>
+                <button class="mode-btn" onclick="showMode('file')">📁 文件模式</button>
+                <button class="mode-btn" onclick="showMode('advanced')">⚙️ 展开高级设置</button>
+            </div>
+            <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                <strong>设计要点:</strong><br>
+                • 上下分区布局: 顶部控制,下部结果显示<br>
+                • 音频源下拉框: 简洁的单选控件,带图标<br>
+                • 音频电平显示: 紧邻音频源下方,实时监控音频输入<br>
+                • 文件模式: 仅在选择"文件"时展开文件列表面板<br>
+                • 简化控制: 只保留核心按钮,统计信息移至状态栏<br>
+                • 高级设置: 可折叠面板,模型改为下拉选择,避免界面拥挤<br>
+                • 响应式: 支持不同窗口尺寸,最小800x600
+            </p>
+        </div>
+
+        <!-- 文件模式视图 -->
+        <div class="mockup-window" id="mockup-file" style="display: none;">
+            <div class="title-bar">
+                <div class="title-bar-title">Speech2Subtitles - 文件转录模式</div>
+                <div class="title-bar-controls">
+                    <div class="title-bar-btn btn-minimize"></div>
+                    <div class="title-bar-btn btn-maximize"></div>
+                    <div class="title-bar-btn btn-close"></div>
+                </div>
+            </div>
+
+            <div class="menu-bar">
+                <span>文件(F)</span>
+                <span>设置(S)</span>
+                <span>历史记录(H)</span>
+                <span>帮助(H)</span>
+            </div>
+
+            <div class="main-content">
+                <div class="top-control-area">
+                    <div class="control-row">
+                        <label class="control-label">🎤 音频源:</label>
+                        <select class="audio-source-combo">
+                            <option value="microphone">🎤 麦克风</option>
+                            <option value="system">🔊 系统音频</option>
+                            <option value="file" selected>📁 文件</option>
+                        </select>
+                        <div class="spacer"></div>
+                        <button class="btn btn-icon">⚙️ 高级设置</button>
+                        <button class="btn btn-primary">▶️ 开始转录</button>
+                        <button class="btn btn-secondary" disabled>⏸ 暂停</button>
+                        <button class="btn btn-secondary" disabled>⏹ 停止</button>
+                    </div>
+
+                    <!-- 音频电平显示 (文件模式下不显示) -->
+                    <div class="audio-level-container" style="visibility: hidden;">
+                        <div class="audio-level-label">🎙️ 音频电平:</div>
+                        <div class="audio-level-bar">
+                            <div class="audio-level-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="audio-level-value">0%</div>
+                    </div>
+
+                    <!-- 文件选择面板 (展开状态) -->
+                    <div class="file-panel">
+                        <div class="file-panel-header">📁 待转录文件</div>
+                        <div class="file-list">
+                            <div class="file-item">
+                                <input type="checkbox" checked>
+                                <span class="file-item-icon">📹</span>
+                                <span>video1.mp4</span>
+                            </div>
+                            <div class="file-item">
+                                <input type="checkbox" checked>
+                                <span class="file-item-icon">📹</span>
+                                <span>video2.avi</span>
+                            </div>
+                            <div class="file-item">
+                                <input type="checkbox">
+                                <span class="file-item-icon">🎵</span>
+                                <span>audio_track.mp3</span>
+                            </div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="btn btn-secondary">📁 添加文件</button>
+                            <button class="btn btn-secondary">❌ 移除选中</button>
+                            <button class="btn btn-secondary">🗑️ 清空列表</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-area">
+                    <div class="result-header">
+                        <div class="result-title">📝 转录结果</div>
+                        <div class="result-actions">
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">清空</button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">导出</button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px;">复制</button>
+                        </div>
+                    </div>
+                    <div class="result-display">
+                        <div style="color: #999; text-align: center; padding: 40px;">
+                            请添加文件并点击"开始转录"
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-item">状态: 就绪</div>
+                <span class="status-separator">|</span>
+                <div class="status-item">文件: 3个</div>
+                <span class="status-separator">|</span>
+                <div class="status-item">选中: 2个</div>
+                <span class="status-separator">|</span>
+                <div class="status-item status-gpu">GPU: ✅ CUDA</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleAdvanced() {
+            const panel = document.getElementById('advanced-panel');
+            panel.classList.toggle('collapsed');
+        }
+
+        function showMode(mode) {
+            // 更新按钮状态
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 显示对应模式
+            const micMockup = document.getElementById('mockup-microphone');
+            const fileMockup = document.getElementById('mockup-file');
+            const advPanel = document.querySelector('#mockup-microphone .advanced-panel');
+
+            micMockup.style.display = 'none';
+            fileMockup.style.display = 'none';
+
+            if (mode === 'microphone') {
+                micMockup.style.display = 'block';
+                advPanel.classList.add('collapsed');
+            } else if (mode === 'file') {
+                fileMockup.style.display = 'block';
+            } else if (mode === 'advanced') {
+                micMockup.style.display = 'block';
+                advPanel.classList.remove('collapsed');
+            }
+
+            // 滚动到视图
+            micMockup.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // 音频源切换
+        document.getElementById('audio-source-select')?.addEventListener('change', function(e) {
+            if (e.target.value === 'file') {
+                showMode('file');
+            }
+        });
+
+        // 模拟音频电平变���
+        function animateAudioLevel() {
+            const fill = document.getElementById('audio-level-fill');
+            if (fill) {
+                const randomLevel = 50 + Math.random() * 40; // 50-90%
+                fill.style.width = randomLevel + '%';
+                fill.parentElement.nextElementSibling.textContent = Math.round(randomLevel) + '%';
+            }
+        }
+
+        // 每300ms更新一次音频电平
+        setInterval(animateAudioLevel, 300);
+    </script>
+</body>
+</html>

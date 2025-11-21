@@ -6,9 +6,10 @@ import logging
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
 from dataclasses import asdict
+from datetime import datetime
 
 from src.config.manager import ConfigManager
-from src.config.models import Config, SubtitleDisplayConfig, VadProfile
+from src.config.models import Config, SubtitleDisplayConfig, VadProfile, ModelProfile
 from src.gui.storage.config_file_manager import ConfigFileManager
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,21 @@ class ConfigBridge:
                         converted_profiles[profile_id] = profile_data
                 config_copy['vad_profiles'] = converted_profiles
 
+        # 处理嵌套的ModelProfile字典
+        if 'model_profiles' in config_copy:
+            model_profiles = config_copy['model_profiles']
+            if isinstance(model_profiles, dict):
+                # 检查是否所有值都已经是ModelProfile对象
+                converted_profiles = {}
+                for profile_id, profile_data in model_profiles.items():
+                    if isinstance(profile_data, dict):
+                        # 将字典转换为ModelProfile对象
+                        converted_profiles[profile_id] = ModelProfile.from_dict(profile_data)
+                    elif isinstance(profile_data, ModelProfile):
+                        # 已经是ModelProfile对象，直接使用
+                        converted_profiles[profile_id] = profile_data
+                config_copy['model_profiles'] = converted_profiles
+
         return Config(**config_copy)
 
     def _set_nested_value(self, d: Dict, path: str, value: Any) -> None:
@@ -353,7 +369,7 @@ class ConfigBridge:
             logger.error(f"Failed to get active VAD profile: {e}")
             return None
 
-    def set_active_vad_profile(self, profile_id: str) -> Tuple[bool, str]:
+    def set_active_vad_profile(self, profile_id: str = "default") -> Tuple[bool, str]:
         """
         设置活跃的VAD方案
 
@@ -443,3 +459,128 @@ class ConfigBridge:
         except Exception as e:
             logger.error(f"Failed to duplicate VAD profile: {e}")
             return False, str(e), None
+
+    # ========== 模型方案管理方法 ==========
+
+    def switch_model_profile(self, profile_id: str) -> bool:
+        """
+        切换活跃的模型方案
+
+        Args:
+            profile_id: 模型方案ID
+
+        Returns:
+            bool: 是否切换成功
+        """
+        if self._current_config is None:
+            logger.error("配置未初始化")
+            return False
+
+        try:
+            self._current_config.set_active_model_profile(profile_id)
+            logger.info(f"Switched to model profile: {profile_id}")
+            return True
+        except Exception as e:
+            logger.error(f"切换模型方案失败: {e}")
+            return False
+
+    def add_model_profile(self, profile: ModelProfile) -> bool:
+        """
+        添加模型方案
+
+        Args:
+            profile: 模型方案对象
+
+        Returns:
+            bool: 是否添加成功
+        """
+        if self._current_config is None:
+            logger.error("配置未初始化")
+            return False
+
+        try:
+            profile.validate()
+            self._current_config.model_profiles[profile.profile_id] = profile
+            logger.info(f"Added model profile: {profile.profile_name} ({profile.profile_id})")
+            return True
+        except Exception as e:
+            logger.error(f"添加模型方案失败: {e}")
+            return False
+
+    def delete_model_profile(self, profile_id: str) -> bool:
+        """
+        删除模型方案
+
+        Args:
+            profile_id: 模型方案ID
+
+        Returns:
+            bool: 是否删除成功
+        """
+        if self._current_config is None:
+            logger.error("配置未初始化")
+            return False
+
+        try:
+            # 保护默认方案
+            if profile_id == "default":
+                raise ValueError("默认方案不能被删除")
+
+            # 至少保留一个方案
+            if len(self._current_config.model_profiles) <= 1:
+                raise ValueError("必须至少保留一个模型方案")
+
+            # 如果删除的是活跃方案，切换到其他方案
+            if profile_id == self._current_config.active_model_profile_id:
+                # 切换到默认方案或第一个可用方案
+                if "default" in self._current_config.model_profiles and "default" != profile_id:
+                    self._current_config.active_model_profile_id = "default"
+                else:
+                    # 找到第一个不是被删除方案的ID
+                    for pid in self._current_config.model_profiles.keys():
+                        if pid != profile_id:
+                            self._current_config.active_model_profile_id = pid
+                            break
+
+            # 删除方案
+            del self._current_config.model_profiles[profile_id]
+            logger.info(f"Deleted model profile: {profile_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"删除模型方案失败: {e}")
+            return False
+
+    def update_model_profile(self, profile_id: str, profile: ModelProfile) -> bool:
+        """
+        更新模型方案
+
+        Args:
+            profile_id: 模型方案ID
+            profile: 新的模型方案对象
+
+        Returns:
+            bool: 是否更新成功
+        """
+        if self._current_config is None:
+            logger.error("配置未初始化")
+            return False
+
+        try:
+            if profile_id not in self._current_config.model_profiles:
+                raise ValueError(f"模型方案 '{profile_id}' 不存在")
+
+            profile.validate()
+            profile.updated_at = datetime.now()
+            self._current_config.model_profiles[profile_id] = profile
+
+            # 如果是活跃方案，同步 model_path
+            if profile_id == self._current_config.active_model_profile_id:
+                self._current_config.model_path = profile.model_path
+
+            logger.info(f"Updated model profile: {profile.profile_name} ({profile_id})")
+            return True
+
+        except Exception as e:
+            logger.error(f"更新模型方案失败: {e}")
+            return False

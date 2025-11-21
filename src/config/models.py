@@ -5,9 +5,11 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pathlib import Path
+from datetime import datetime
 import uuid
+import os
 
 
 # 系统常量定义
@@ -66,6 +68,44 @@ class SubtitleDisplayConstants:
     DEFAULT_FONT_FAMILY: str = "Microsoft YaHei"
 
 
+def migrate_legacy_config(config: 'Config') -> None:
+    """
+    迁移旧版配置到新格式
+
+    Args:
+        config: 配置对象
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 如果没有模型方案,从 model_path 创建默认方案
+    if not config.model_profiles or len(config.model_profiles) == 0:
+        logger.info("检测到旧版配置格式(缺少model_profiles),开始迁移...")
+
+        default_profile = ModelProfile.create_default_profile(
+            model_path=config.model_path if config.model_path else ""
+        )
+
+        config.model_profiles = {"default": default_profile}
+        config.active_model_profile_id = "default"
+
+        logger.info("配置迁移完成，已创建默认模型方案")
+
+    # 验证活跃方案ID存在
+    if config.active_model_profile_id not in config.model_profiles:
+        logger.warning(f"活跃方案ID '{config.active_model_profile_id}' 不存在，重置为默认方案")
+
+        if "default" in config.model_profiles:
+            config.active_model_profile_id = "default"
+        else:
+            # 使用第一个可用方案
+            config.active_model_profile_id = next(iter(config.model_profiles.keys()))
+
+    # 同步 model_path 字段（向后兼容）
+    active_profile = config.get_active_model_profile()
+    config.model_path = active_profile.model_path
+
+
 @dataclass
 class VadProfile:
     """
@@ -76,8 +116,7 @@ class VadProfile:
     """
     # 方案基本信息
     profile_name: str                                    # 方案名称 (如"默认"、"安静环境"、"嘈杂环境")
-    profile_id: str = field(default_factory=lambda: str(uuid.uuid4()))  # 方案唯一ID
-
+    profile_id: str 
     # VAD核心参数 (对应 VadConfig 和 detector.py:228-263)
     threshold: float = VadConstants.DEFAULT_THRESHOLD    # 语音检测阈值 (0.0-1.0)
     min_speech_duration_ms: float = 100.0                # 最小语音持续时间(毫秒)
@@ -92,6 +131,10 @@ class VadProfile:
 
     # 窗口配置
     window_size_samples: int = 512                       # 音频处理窗口大小(采样点数)
+    
+    # 在实例化 VadConfigProfile 后手动设置 profile_id
+    def __post_init__(self):
+        self.profile_id = f"profile_{self.profile_name}"
 
     def validate(self) -> None:
         """验证VAD方案配置的有效性"""
@@ -181,6 +224,119 @@ class VadProfile:
 
 
 @dataclass
+class ModelProfile:
+    """
+    模型配置方案数据类
+
+    存储单个语音识别模型的完整配置信息,支持保存和切换多个模型配置
+    """
+    # 基本信息
+    profile_id: str = field(default_factory=lambda: f"model_{uuid.uuid4().hex[:8]}")  # 方案唯一ID
+    profile_name: str = "未命名模型"                                                    # 方案名称
+
+    # 模型路径(必需)
+    model_path: str = ""                                                              # 模型文件路径
+
+    # 可选元数据
+    description: Optional[str] = None                                                 # 模型描述信息
+    supported_languages: Optional[List[str]] = None                                   # 支持的语言列表 ["zh", "en", "ja", "ko", "yue"]
+
+    # 时间戳
+    created_at: datetime = field(default_factory=datetime.now)                        # 创建时间
+    updated_at: datetime = field(default_factory=datetime.now)                        # 最后更新时间
+
+    def validate(self) -> None:
+        """
+        验证模型配置的有效性
+
+        Raises:
+            ValueError: 配置无效时抛出异常
+        """
+        # 验证方案名称
+        if not self.profile_name or not self.profile_name.strip():
+            raise ValueError("模型方案名称不能为空")
+
+        # 验证模型路径
+        if not self.model_path or not self.model_path.strip():
+            raise ValueError("模型文件路径不能为空")
+
+        model_path = Path(self.model_path)
+        if not model_path.exists():
+            raise ValueError(f"模型文件不存在: {self.model_path}")
+
+        if not model_path.is_file():
+            raise ValueError(f"模型路径不是文件: {self.model_path}")
+
+        if model_path.suffix.lower() not in ModelConstants.SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"不支持的模型文件格式: {model_path.suffix}, "
+                f"支持的格式: {ModelConstants.SUPPORTED_EXTENSIONS}"
+            )
+
+    
+        # 验证文件权限
+        if not os.access(model_path, os.R_OK):
+            raise ValueError(f"没有读取权限: {self.model_path}")
+
+    @staticmethod
+    def create_default_profile(model_path: str = "") -> 'ModelProfile':
+        """
+        创建默认模型方案
+
+        Args:
+            model_path: 模型文件路径
+
+        Returns:
+            ModelProfile: 默认配置方案
+        """
+        return ModelProfile(
+            profile_id="default",
+            profile_name="默认",
+            model_path=model_path,
+            description="系统默认模型配置",
+            supported_languages=["zh", "en", "ja", "ko", "yue"]
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典(用于序列化)
+
+        Returns:
+            Dict[str, Any]: 字典形式的配置数据
+        """
+        return {
+            "profile_id": self.profile_id,
+            "profile_name": self.profile_name,
+            "model_path": self.model_path,
+            "description": self.description,
+            "supported_languages": self.supported_languages,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat()
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'ModelProfile':
+        """
+        从字典创建实例(用于反序列化)
+
+        Args:
+            data: 字典形式的配置数据
+
+        Returns:
+            ModelProfile: 模型配置方案实例
+        """
+        return ModelProfile(
+            profile_id=data.get("profile_id", f"model_{uuid.uuid4().hex[:8]}"),
+            profile_name=data.get("profile_name", "未命名模型"),
+            model_path=data.get("model_path", ""),
+            description=data.get("description"),
+            supported_languages=data.get("supported_languages"),
+            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
+            updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.now()
+        )
+
+
+@dataclass
 class SubtitleDisplayConfig:
     """字幕显示配置数据类"""
     enabled: bool = False                                    # 是否启用字幕显示
@@ -246,6 +402,10 @@ class Config:
     # VAD方案管理 (新增)
     vad_profiles: Dict[str, VadProfile] = field(default_factory=dict)  # VAD配置方案字典 {profile_id: VadProfile}
     active_vad_profile_id: str = "default"                   # 当前活跃的VAD方案ID
+
+    # 模型方案管理 (新增)
+    model_profiles: Dict[str, ModelProfile] = field(default_factory=dict)  # 模型配置方案字典 {profile_id: ModelProfile}
+    active_model_profile_id: str = "default"                 # 当前活跃的模型方案ID
 
     # 输出配置
     show_confidence: bool = True                             # 显示置信度
@@ -382,12 +542,37 @@ class Config:
             except Exception as e:
                 raise ValueError(f"VAD方案 '{profile_id}' 配置无效: {e}")
 
+        # 验证模型方案配置（先迁移旧配置）
+        migrate_legacy_config(self)
+
+        # 验证活跃模型方案ID存在
+        if self.active_model_profile_id not in self.model_profiles:
+            raise ValueError(
+                f"活跃的模型方案ID '{self.active_model_profile_id}' 不存在，"
+                f"可用方案: {list(self.model_profiles.keys())}"
+            )
+
+        # 验证所有模型方案
+        for profile_id, profile in self.model_profiles.items():
+            try:
+                profile.validate()
+            except Exception as e:
+                raise ValueError(f"模型方案 '{profile_id}' 配置无效: {e}")
+
+        # 同步 model_path 字段（向后兼容）
+        active_profile = self.get_active_model_profile()
+        self.model_path = active_profile.model_path
+
     def __post_init__(self):
         """初始化后验证"""
         # 注意: 在配置未完全加载前不验证,由ConfigManager调用validate()
         # 如果 vad_profiles 为空,初始化为包含默认方案的字典
         if not self.vad_profiles:
             self.vad_profiles = {"default": VadProfile.create_default_profile()}
+
+        # 如果 model_profiles 为空,初始化为包含默认方案的字典
+        if not self.model_profiles:
+            self.model_profiles = {"default": ModelProfile.create_default_profile(self.model_path)}
 
     def is_realtime_mode(self) -> bool:
         """判断是否为实时转录模式（麦克风或系统音频）"""
@@ -424,6 +609,37 @@ class Config:
         if profile_id not in self.vad_profiles:
             raise ValueError(f"VAD方案 '{profile_id}' 不存在")
         self.active_vad_profile_id = profile_id
+
+    def get_active_model_profile(self) -> ModelProfile:
+        """
+        获取当前活跃的模型方案
+
+        Returns:
+            ModelProfile: 当前活跃的模型配置方案
+
+        Raises:
+            ValueError: 如果活跃方案不存在
+        """
+        if self.active_model_profile_id not in self.model_profiles:
+            raise ValueError(f"活跃的模型方案 '{self.active_model_profile_id}' 不存在")
+        return self.model_profiles[self.active_model_profile_id]
+
+    def set_active_model_profile(self, profile_id: str) -> None:
+        """
+        设置活跃的模型方案
+
+        Args:
+            profile_id: 模型方案ID
+
+        Raises:
+            ValueError: 如果方案不存在
+        """
+        if profile_id not in self.model_profiles:
+            raise ValueError(f"模型方案 '{profile_id}' 不存在")
+        self.active_model_profile_id = profile_id
+
+        # 同步更新 model_path (用于向后兼容)
+        self.model_path = self.model_profiles[profile_id].model_path
 
 
 @dataclass
