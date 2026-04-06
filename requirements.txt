@@ -1,17 +1,22 @@
 # 核心依赖
-sherpa-onnx>=1.12.9
-torch>=2.6.0
+#sherpa-onnx==1.12.35+cuda12.cudnn9 -f https://k2-fsa.github.io/sherpa/onnx/cuda-cn.html
+torch==2.7.1+cu126
+torchaudio==2.7.1+cu126
+torchvision==0.22.1 
+
 silero-vad>=4.0.0
 numpy>=1.21.0
 PyAudio>=0.2.11
 
 # GPU支持 (可选)
-onnxruntime-gpu>=1.12.0
+onnxruntime-gpu==1.23.25
 
 # 工具库
 dataclasses-json>=0.5.7
 typing-extensions>=4.0.0
 psutil>=5.8.0
+pydub
+PySide6
 
 # 开发依赖
 pytest>=7.0.0

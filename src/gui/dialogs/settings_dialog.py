@@ -723,7 +723,7 @@ class SettingsDialog(QDialog):
 
         # GPU启用复选框
         gpu_checkbox = QCheckBox("启用GPU加速")
-        gpu_checkbox.setChecked(not self.config.use_gpu)
+        gpu_checkbox.setChecked(self.config.use_gpu)
         layout.addRow(gpu_checkbox)
         self.config_widgets['use_gpu'] = gpu_checkbox
 
@@ -899,7 +899,7 @@ class SettingsDialog(QDialog):
     def _load_gpu_settings(self) -> None:
         """加载GPU设置"""
         if 'use_gpu' in self.config_widgets:
-            self.config_widgets['use_gpu'].setChecked(not self.config.use_gpu)
+            self.config_widgets['use_gpu'].setChecked(self.config.use_gpu)
 
     def _load_subtitle_settings(self) -> None:
         """加载字幕设置"""
@@ -1070,7 +1070,7 @@ class SettingsDialog(QDialog):
     def _collect_gpu_settings(self) -> None:
         """收集GPU设置"""
         if 'use_gpu' in self.config_widgets:
-            self.config.use_gpu = not self.config_widgets['use_gpu'].isChecked()
+            self.config.use_gpu = self.config_widgets['use_gpu'].isChecked()
 
     def _collect_subtitle_settings(self) -> None:
         """收集字幕设置"""

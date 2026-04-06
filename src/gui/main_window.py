@@ -1067,7 +1067,7 @@ class MainWindow(QMainWindow):
             )
 
         # 更新GPU状态
-        gpu_enabled = not self.config.use_gpu
+        gpu_enabled = self.config.use_gpu
         gpu_info = "CUDA" if gpu_enabled else "未检测到"
         self.advanced_settings_panel.update_gpu_status(gpu_enabled, gpu_info)
 

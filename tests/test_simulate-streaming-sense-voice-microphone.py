@@ -119,6 +119,7 @@ def create_recognizer(args) -> sherpa_onnx.OfflineRecognizer:
         num_threads=args.num_threads,
         use_itn=False,
         debug=False,
+        provider="cuda",
         hr_dict_dir=args.hr_dict_dir,
         hr_rule_fsts=args.hr_rule_fsts,
         hr_lexicon=args.hr_lexicon,

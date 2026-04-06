@@ -351,13 +351,15 @@ class TranscriptionEngine:
 
             # # 创建识别器
             # self._recognizer = sherpa_onnx.OfflineRecognizer(recognizer_config)
+            #ort.preload_dlls()
+            #print(ort.get_available_providers())
             self._recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                 model=self.config.model_path,
                 tokens=os.path.join(os.path.dirname(self.config.model_path), "tokens.txt"),
                 num_threads=2,
                 use_itn=True,
                 debug=False,
-                # provider='cuda' if self.config.use_gpu else 'cpu'
+                provider='cuda' if self.config.use_gpu else 'cpu'
                 # hr_dict_dir=args.hr_dict_dir,
                 # hr_rule_fsts=args.hr_rule_fsts,
                 # hr_lexicon=args.hr_lexicon,

@@ -111,7 +111,7 @@ git clone <repository-url>
 cd speech2subtitles
 
 # 创建虚拟环境
-python -m venv .venv
+uv v
 
 # 激活虚拟环境
 # Windows:
