@@ -158,7 +158,8 @@ class VadManager:
                 instance._stats["detector_reuses"] += 1
                 logger.info(f"复用缓存的 detector (reuses: {instance._stats['detector_reuses']}, "
                           f"模型: {instance._stats['current_model']})")
-
+            # 打印config参数
+            logger.info(f"VAD Config: {config}")
             return instance._detector
 
     def _should_reload(self, new_config: VadConfig) -> bool:

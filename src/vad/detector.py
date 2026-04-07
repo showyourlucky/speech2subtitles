@@ -361,7 +361,18 @@ class SherpaOnnxVAD:
 
             if is_speech:
                 self._statistics.update_speech_duration(duration_ms)
-                result.audio_data = real_data
+                # 关键修复：
+                # 对 TRANSITION_TO_SPEECH 阶段，优先保留 _update_state() 产出的前置缓冲音频，
+                # 避免被 real_data 覆盖后再次出现“首字被截断”的问题。
+                has_buffered_audio = result.audio_data is not None and len(result.audio_data) > 0
+                if result.state == VadState.TRANSITION_TO_SPEECH and has_buffered_audio:
+                    logger.debug(
+                        "SherpaOnnxVAD 保留语音起始缓冲音频: buffered=%s, raw_segment=%s",
+                        len(result.audio_data),
+                        len(real_data) if real_data is not None else 0,
+                    )
+                elif real_data is not None and len(real_data) > 0:
+                    result.audio_data = real_data
             else:
                 self._statistics.update_silence_duration(duration_ms)
 

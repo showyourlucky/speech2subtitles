@@ -9,6 +9,8 @@ import threading  # 多线程支持
 import time  # 时间相关操作
 import signal  # 信号处理（用于优雅停止）
 import sys  # 系统相关功能
+import os  # 环境变量
+import numpy as np  # 数值计算
 from typing import Optional, List, Callable, Dict, Any  # 类型注解
 from queue import Queue, Empty  # 线程安全队列和空队列异常
 from dataclasses import dataclass  # 数据类装饰器
@@ -158,7 +160,276 @@ class TranscriptionPipeline:
         # 错误处理回调函数列表
         self.error_callbacks: List[Callable[[Exception], None]] = []
 
+        # 空识别补偿缓存：当某段“检测到语音但无法识别”时，暂存尾部音频，
+        # 在下一段触发转录时拼接重试，降低首字/尾字被截断的概率。
+        self._unrecognized_retry_audio: Optional[np.ndarray] = None
+        self._unrecognized_retry_timestamp: float = 0.0
+        self._unrecognized_retry_max_gap_seconds: float = 1.2
+        self._unrecognized_retry_tail_seconds: float = 1.0
+        # 分段边界补偿缓存：无论本段是否空识别，都保留一小段尾音用于下一段拼接，
+        # 优先修复“首字偶发被截断（如 记住啊 -> 住啊）”的问题。
+        self._segment_context_audio: Optional[np.ndarray] = None
+        self._segment_context_timestamp: float = 0.0
+        self._segment_context_max_gap_seconds: float = 0.8
+        self._segment_context_tail_seconds: float = 0.1
+        # 仅对较短语音段做边界拼接，降低长段重复概率
+        self._segment_context_apply_max_current_seconds: float = 0.9
+        # 文本去重状态：仅在本次确实做过边界拼接时启用前缀去重
+        self._last_context_overlap_applied: bool = False
+        self._last_success_transcription_text: str = ""
+        self._last_success_transcription_timestamp: float = 0.0
+        self._text_overlap_max_chars: int = 12
+        self._text_overlap_max_gap_seconds: float = 2.0
+
         logger.info("TranscriptionPipeline initialized")
+
+    def _resolve_transcription_language(self) -> LanguageCode:
+        """
+        解析当前流水线应使用的识别语言。
+
+        规则：
+        1. 若配置中显式提供 transcription_language，则优先使用。
+        2. 若未配置，则读取环境变量 S2S_TRANSCRIPTION_LANGUAGE。
+        3. 系统音频默认使用中文提示，降低 auto 在中日同音场景下误判概率。
+        4. 其它场景回退为自动识别。
+        """
+        raw_language = getattr(self.config, "transcription_language", None)
+        if raw_language is None:
+            raw_language = os.getenv("S2S_TRANSCRIPTION_LANGUAGE")
+        if raw_language is not None:
+            normalized = str(raw_language).strip().lower()
+            if normalized in {"zh", "zh-cn", "chinese", "cn"}:
+                return LanguageCode.CHINESE
+            if normalized in {"en", "en-us", "english"}:
+                return LanguageCode.ENGLISH
+            if normalized in {"auto", "自动"}:
+                return LanguageCode.AUTO
+            logger.warning(f"未识别的 transcription_language 配置: {raw_language}，已回退到自动识别")
+
+        if getattr(self.config, "input_source", None) == "system":
+            logger.info("系统音频默认启用中文识别提示(language=zh)，可降低中日混淆导致的漏字")
+            return LanguageCode.CHINESE
+
+        return LanguageCode.AUTO
+
+    @staticmethod
+    def _is_unrecognized_transcription_text(text: Optional[str]) -> bool:
+        """判断是否为“检测到语音但无法识别内容”占位结果。"""
+        if text is None:
+            return True
+        normalized_text = text.strip()
+        return (
+            not normalized_text
+            or normalized_text.startswith("[检测到语音但无法识别内容]")
+            or normalized_text.startswith("[空音频数据]")
+        )
+
+    def _trim_retry_audio_tail(self, audio_data: np.ndarray) -> np.ndarray:
+        """
+        裁剪重试缓存尾音长度，避免缓存无限增长。
+
+        仅保留最近一小段（默认1秒），足够覆盖跨段边界字词。
+        """
+        max_samples = max(1, int(self.config.sample_rate * self._unrecognized_retry_tail_seconds))
+        if len(audio_data) <= max_samples:
+            return audio_data
+        return audio_data[-max_samples:]
+
+    def _trim_context_overlap_tail(self, audio_data: np.ndarray) -> np.ndarray:
+        """
+        裁剪分段边界补偿尾音长度。
+
+        仅保留较短尾音（默认0.2秒），在不显著增加重复的前提下补足边界字词。
+        """
+        max_samples = max(1, int(self.config.sample_rate * self._segment_context_tail_seconds))
+        if len(audio_data) <= max_samples:
+            return audio_data
+        return audio_data[-max_samples:]
+
+    def _should_enable_context_overlap(self) -> bool:
+        """
+        判断当前是否启用分段边界补偿拼接。
+
+        系统音频在高频短分段场景下更容易出现“下一句带上句尾巴”的冗余字，
+        因此默认关闭该补偿逻辑，仅保留空识别重试补偿。
+        """
+        return getattr(self.config, "input_source", None) != "system"
+
+    def _merge_with_context_overlap_audio(
+        self,
+        current_audio: np.ndarray,
+        current_timestamp: float,
+    ) -> np.ndarray:
+        """
+        将上一段尾音与当前段拼接，用于分段边界补偿。
+        """
+        self._last_context_overlap_applied = False
+
+        if not self._should_enable_context_overlap():
+            if self._segment_context_audio is not None:
+                logger.debug("系统音频模式禁用分段边界补偿，已清理尾音缓存")
+            self._segment_context_audio = None
+            self._segment_context_timestamp = 0.0
+            return current_audio
+
+        if self._segment_context_audio is None or len(self._segment_context_audio) == 0:
+            return current_audio
+
+        gap_seconds = current_timestamp - self._segment_context_timestamp
+        if gap_seconds > self._segment_context_max_gap_seconds:
+            self._segment_context_audio = None
+            self._segment_context_timestamp = 0.0
+            return current_audio
+
+        max_current_samples = max(
+            1,
+            int(self.config.sample_rate * self._segment_context_apply_max_current_seconds),
+        )
+        if len(current_audio) > max_current_samples:
+            logger.debug(
+                "当前语音段过长，跳过分段边界补偿: current=%s, threshold=%s",
+                len(current_audio),
+                max_current_samples,
+            )
+            return current_audio
+
+        try:
+            merged_audio = np.concatenate([self._segment_context_audio, current_audio])
+            self._last_context_overlap_applied = True
+            logger.debug(
+                "触发分段边界补偿拼接: cached=%s, current=%s, merged=%s, gap=%.3fs",
+                len(self._segment_context_audio),
+                len(current_audio),
+                len(merged_audio),
+                gap_seconds,
+            )
+            return merged_audio
+        except Exception as e:
+            logger.warning(f"分段边界补偿拼接失败，回退使用当前段: {e}")
+            self._segment_context_audio = None
+            self._segment_context_timestamp = 0.0
+            return current_audio
+
+    def _deduplicate_context_overlap_text(
+        self,
+        text: Optional[str],
+        current_timestamp: float,
+    ) -> str:
+        """
+        对边界补偿后的文本做轻量前缀去重，减少冗余字。
+
+        仅在本次确实做过分段边界拼接时启用，避免误伤正常重复表达。
+        """
+        normalized_text = text.strip() if text else ""
+        if self._is_unrecognized_transcription_text(normalized_text):
+            return normalized_text
+
+        should_try_dedup = self._last_context_overlap_applied
+        has_recent_previous = (
+            bool(self._last_success_transcription_text)
+            and current_timestamp - self._last_success_transcription_timestamp <= self._text_overlap_max_gap_seconds
+        )
+
+        if should_try_dedup and has_recent_previous:
+            previous_text = self._last_success_transcription_text
+            max_overlap_chars = min(
+                len(previous_text),
+                len(normalized_text),
+                self._text_overlap_max_chars,
+            )
+            overlap_chars = 0
+            for overlap_size in range(max_overlap_chars, 1, -1):
+                if previous_text[-overlap_size:] == normalized_text[:overlap_size]:
+                    overlap_chars = overlap_size
+                    break
+
+            if overlap_chars >= 2:
+                dedup_text = normalized_text[overlap_chars:].lstrip(" ，。！？!?；;：:,.")
+                if dedup_text:
+                    logger.info(
+                        "去除分段重叠冗余前缀: overlap=%s, before='%s', after='%s'",
+                        overlap_chars,
+                        normalized_text,
+                        dedup_text,
+                    )
+                    normalized_text = dedup_text
+
+        self._last_success_transcription_text = normalized_text
+        self._last_success_transcription_timestamp = current_timestamp
+        return normalized_text
+
+    def _merge_with_unrecognized_retry_audio(
+        self,
+        current_audio: np.ndarray,
+        current_timestamp: float,
+    ) -> np.ndarray:
+        """
+        将上次空识别的缓存尾音与当前段拼接，用于一次补偿重试。
+        """
+        if self._unrecognized_retry_audio is None or len(self._unrecognized_retry_audio) == 0:
+            return current_audio
+
+        gap_seconds = current_timestamp - self._unrecognized_retry_timestamp
+        if gap_seconds > self._unrecognized_retry_max_gap_seconds:
+            # 间隔过长时放弃拼接，避免把无关语音混入
+            self._unrecognized_retry_audio = None
+            self._unrecognized_retry_timestamp = 0.0
+            return current_audio
+
+        try:
+            merged_audio = np.concatenate([self._unrecognized_retry_audio, current_audio])
+            logger.debug(
+                "触发空识别补偿拼接: cached=%s, current=%s, merged=%s, gap=%.3fs",
+                len(self._unrecognized_retry_audio),
+                len(current_audio),
+                len(merged_audio),
+                gap_seconds,
+            )
+            return merged_audio
+        except Exception as e:
+            logger.warning(f"空识别补偿拼接失败，回退使用当前段: {e}")
+            self._unrecognized_retry_audio = None
+            self._unrecognized_retry_timestamp = 0.0
+            return current_audio
+
+    def _update_unrecognized_retry_state(
+        self,
+        source_audio: np.ndarray,
+        transcription_result: Optional[TranscriptionResult],
+        current_timestamp: float,
+    ) -> None:
+        """根据本次转录结果更新空识别补偿缓存。"""
+        result_text = transcription_result.text if transcription_result else ""
+        if self._is_unrecognized_transcription_text(result_text):
+            self._unrecognized_retry_audio = self._trim_retry_audio_tail(source_audio)
+            self._unrecognized_retry_timestamp = current_timestamp
+            logger.debug(
+                "更新空识别补偿缓存: samples=%s, timestamp=%.3f",
+                len(self._unrecognized_retry_audio),
+                self._unrecognized_retry_timestamp,
+            )
+        else:
+            self._unrecognized_retry_audio = None
+            self._unrecognized_retry_timestamp = 0.0
+
+    def _update_context_overlap_state(
+        self,
+        source_audio: np.ndarray,
+        current_timestamp: float,
+    ) -> None:
+        """更新分段边界补偿缓存。"""
+        if not self._should_enable_context_overlap():
+            self._segment_context_audio = None
+            self._segment_context_timestamp = 0.0
+            return
+
+        self._segment_context_audio = self._trim_context_overlap_tail(source_audio)
+        self._segment_context_timestamp = current_timestamp
+        logger.debug(
+            "更新分段边界补偿缓存: samples=%s, timestamp=%.3f",
+            len(self._segment_context_audio),
+            self._segment_context_timestamp,
+        )
 
     def _setup_signal_handlers(self):
         """设置系统信号处理器以支持优雅停止
@@ -285,10 +556,11 @@ class TranscriptionPipeline:
 
             # 4. 初始化转录引擎：使用sense-voice模型进行语音识别
             # 使用TranscriptionEngineManager实现智能复用，避免重复加载模型
+            resolved_language = self._resolve_transcription_language()
             transcription_config = TranscriptionConfig(
                 model=TranscriptionModel.SENSE_VOICE,  # 使用sense-voice模型
                 model_path=self.config.model_path,     # 模型文件路径
-                language=LanguageCode.AUTO,            # 自动语言检测
+                language=resolved_language,            # 根据输入源/配置解析语言提示
                 # 根据GPU可用性选择处理器类型
                 processor_type=ProcessorType.GPU if (self.config.use_gpu and gpu_available) else ProcessorType.CPU,
                 sample_rate=self.config.sample_rate,   # 与音频采样率保持一致
@@ -467,7 +739,22 @@ class TranscriptionPipeline:
         """处理音频数据事件"""
         if self.vad_detector and isinstance(event.data, AudioChunk):
             self.statistics.total_audio_chunks += 1
-            self.vad_detector.process_audio(event.data.data)
+            audio_chunk = event.data
+            audio_data = audio_chunk.data
+
+            # VAD 输入要求单声道；系统环回默认优先使用首声道，避免立体声均值带来的相位抵消
+            if audio_chunk.channels > 1:
+                try:
+                    reshaped = audio_data.reshape(-1, audio_chunk.channels)
+                    audio_data = reshaped[:, 0]
+                except Exception as e:
+                    logger.warning(f"多声道取首声道失败，回退到均值单声道: {e}")
+                    try:
+                        audio_data = audio_chunk.to_mono().data
+                    except Exception as fallback_error:
+                        logger.warning(f"均值单声道回退失败，继续使用原始音频块: {fallback_error}")
+
+            self.vad_detector.process_audio(audio_data)
 
     def _handle_vad_result(self, event: PipelineEvent) -> None:
         """处理VAD检测结果事件 - 增强版转录触发逻辑"""
@@ -515,7 +802,29 @@ class TranscriptionPipeline:
                     f"持续时间={vad_result.duration_ms:.1f}ms"
                 )
                 try:
-                    self.transcription_engine.transcribe_audio(vad_result.audio_data)
+                    audio_for_transcription = np.asarray(vad_result.audio_data)
+                    audio_with_context = self._merge_with_context_overlap_audio(
+                        audio_for_transcription,
+                        vad_result.timestamp,
+                    )
+                    merged_audio = self._merge_with_unrecognized_retry_audio(
+                        audio_with_context,
+                        vad_result.timestamp,
+                    )
+                    transcription_result = self.transcription_engine.transcribe_audio(merged_audio)
+                    transcription_result.text = self._deduplicate_context_overlap_text(
+                        transcription_result.text,
+                        vad_result.timestamp,
+                    )
+                    self._update_context_overlap_state(
+                        audio_for_transcription,
+                        vad_result.timestamp,
+                    )
+                    self._update_unrecognized_retry_state(
+                        merged_audio,
+                        transcription_result,
+                        vad_result.timestamp,
+                    )
                     # 更新成功统计
                     self.statistics.update_activity()
                 except Exception as e:

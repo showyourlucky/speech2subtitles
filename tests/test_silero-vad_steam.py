@@ -79,5 +79,5 @@ class RealTimeVAD:
 
 # 使用示例
 if __name__ == "__main__":
-    vad_detector = RealTimeVAD()
+    vad_detector = RealTimeVAD("models\silero_vad\silero_vad.onnx")
     vad_detector.start()

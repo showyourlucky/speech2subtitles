@@ -318,6 +318,20 @@ class TranscriptionEngine:
         except Exception as e:
             logger.warning(f"sherpa-onnx offline模型加载失败，使用基础实现: {e}")
 
+    def _resolve_sense_voice_language_hint(self) -> str:
+        """
+        解析 sense-voice 语言提示参数。
+
+        返回值：
+        - "auto"：自动识别
+        - "zh"/"en"：显式语言提示
+        """
+        if self.config.language == LanguageCode.CHINESE:
+            return "zh"
+        if self.config.language == LanguageCode.ENGLISH:
+            return "en"
+        return "auto"
+
     def _load_sense_voice_model(self) -> None:
         """Load sense-voice model - enhanced implementation with fallback"""
         try:
@@ -327,6 +341,8 @@ class TranscriptionEngine:
 
             # 基本的sherpa-onnx sense-voice模型加载
             logger.info(f"正在加载sense-voice模型: {self.config.model_path}")
+            language_hint = self._resolve_sense_voice_language_hint()
+            logger.info(f"sense-voice语言提示: {language_hint}")
 
             # 创建sense-voice配置
             # model_config = sherpa_onnx.OfflineSenseVoiceModelConfig(
@@ -359,7 +375,8 @@ class TranscriptionEngine:
                 num_threads=2,
                 use_itn=True,
                 debug=False,
-                provider='cuda' if self.config.use_gpu else 'cpu'
+                provider='cuda' if self.config.use_gpu else 'cpu',
+                language=language_hint,
                 # hr_dict_dir=args.hr_dict_dir,
                 # hr_rule_fsts=args.hr_rule_fsts,
                 # hr_lexicon=args.hr_lexicon,

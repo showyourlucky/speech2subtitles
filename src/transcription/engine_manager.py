@@ -189,6 +189,21 @@ class TranscriptionEngineManager:
             logger.debug(f"Model path changed: {old.model_path} -> {new_config.model_path}")
             return True
 
+        # 检查模型类型是否变化
+        if old.model != new_config.model:
+            logger.debug(f"Model type changed: {old.model} -> {new_config.model}")
+            return True
+
+        # 检查语言提示是否变化
+        if old.language != new_config.language:
+            logger.debug(f"Language changed: {old.language} -> {new_config.language}")
+            return True
+
+        # 检查处理器类型是否变化
+        if old.processor_type != new_config.processor_type:
+            logger.debug(f"Processor type changed: {old.processor_type} -> {new_config.processor_type}")
+            return True
+
         # 检查GPU配置是否变化
         if old.use_gpu != new_config.use_gpu:
             logger.debug(f"GPU setting changed: {old.use_gpu} -> {new_config.use_gpu}")

@@ -508,7 +508,7 @@ def main():
                 # config.model_path = ""  # 占位符，实际使用时需要真实路径
                 print("\n[调试模式] 使用默认配置")
                 print("在生产环境中，请提供正确的命令行参数")
-                print("示例: python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone")
+                print("示例: python main.py --model-path models\\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\\model.onnx --input-source microphone")
                 
             else:
                 # 正常模式：解析命令行参数

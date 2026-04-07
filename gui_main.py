@@ -72,7 +72,7 @@ def setup_logging(
 def main():
     """GUI主程序入口"""
     # 配置日志
-    setup_logging(level="INFO", console_enabled=False, file_enabled=True)
+    setup_logging(level="INFO", console_enabled=True, file_enabled=False)
     logger = logging.getLogger(__name__)
 
     logger.info("启动Speech2Subtitles GUI")

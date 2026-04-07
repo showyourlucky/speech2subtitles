@@ -146,10 +146,10 @@ mkdir models
 .venv\Scripts\activate
 
 # 麦克风输入
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source microphone
 
 # 系统音频输入
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source system --no-gpu
 ```
 
 #### 模式2: 媒体文件转字幕 (新功能)
@@ -157,20 +157,20 @@ python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-
 **基本用法**
 ```bash
 # 单个文件
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video.mp4
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video.mp4
 
 # 多个文件
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video1.mp4 audio1.mp3 lecture.avi
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video1.mp4 audio1.mp3 lecture.avi
 
 # 处理目录
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file ./videos/
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file ./videos/
 ```
 
 **高级用法**
 ```bash
 # 指定输出目录和字幕格式
 python main.py \
-    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
+    --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx \
     --input-file video.mp4 \
     --output-dir ./subtitles/ \
     --subtitle-format srt \
@@ -178,7 +178,7 @@ python main.py \
 
 # 保留临时文件用于调试
 python main.py \
-    --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
+    --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx \
     --input-file video.mp4 \
     --keep-temp \
     --no-gpu
@@ -353,7 +353,7 @@ python test_integration.py
 
 启用调试日志：
 ```bash
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level DEBUG
+python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source microphone --log-level DEBUG
 ```
 
 日志文件位置：

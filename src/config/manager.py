@@ -28,13 +28,13 @@ class ConfigManager:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 使用示例 - 实时转录:
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --no-gpu
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source microphone
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source system --no-gpu
 
 使用示例 - 媒体文件转字幕:
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video.mp4
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file video1.mp4 audio1.mp3 --output-dir subtitles/
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-file videos/ --subtitle-format srt
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video.mp4
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video1.mp4 audio1.mp3 --output-dir subtitles/
+  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file videos/ --subtitle-format srt
 
 支持的输入模式:
   实时转录:     --input-source (microphone/system)
@@ -269,7 +269,7 @@ class ConfigManager:
                 verbose=parsed_args.verbose if hasattr(parsed_args, 'verbose') else False,
                 # 字幕显示参数
                 subtitle_display=SubtitleDisplayConfig(
-                    enabled=getattr(parsed_args, 'show_subtitles', False),
+                    enabled=getattr(parsed_args, 'show_subtitles', True),
                     position=getattr(parsed_args, 'subtitle_position', 'bottom'),
                     font_size=getattr(parsed_args, 'subtitle_font_size', 24),
                     font_family=getattr(parsed_args, 'subtitle_font_family', 'Microsoft YaHei'),
@@ -301,7 +301,7 @@ class ConfigManager:
             模型路径需要单独设置，因为没有合理的默认值
         """
         return Config(
-            model_path="models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx",  # 需要用户指定
+            model_path="models/sherpa-onnx-sense-voice-funasr-nano-2025-12-17/model.onnx",  # 需要用户指定
             input_source="microphone",
             use_gpu=True,
             vad_sensitivity=0.5,
