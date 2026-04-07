@@ -15,9 +15,7 @@
 """
 
 import sys
-import os
 import logging
-import argparse
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +25,7 @@ sys.path.insert(0, str(project_root))
 
 # 导入项目核心组件
 from src.config.manager import ConfigManager
+from src.config.loader import ConfigLoader
 from src.coordinator.pipeline import TranscriptionPipeline, PipelineState
 from src.coordinator.pipeline import EventType, PipelineEvent
 
@@ -318,12 +317,22 @@ def run_file_transcription(config):
     print("\n[初始化] 加载转录引擎...")
 
     # 创建转录引擎配置
+    language_hint = None
+    if getattr(config, "transcription_language", None):
+        raw_language = str(config.transcription_language).strip().lower()
+        if raw_language in {"zh", "zh-cn", "chinese", "cn"}:
+            language_hint = LanguageCode.CHINESE
+        elif raw_language in {"en", "en-us", "english"}:
+            language_hint = LanguageCode.ENGLISH
+        elif raw_language in {"auto", "自动"}:
+            language_hint = LanguageCode.AUTO
+
     transcription_config = TranscriptionConfig(
         model=TranscriptionModel.SENSE_VOICE,
         model_path=config.model_path,
-        language=LanguageCode.AUTO,
-        sample_rate=16000,
-        use_gpu=not config.no_gpu if hasattr(config, 'no_gpu') else True
+        language=language_hint or LanguageCode.AUTO,
+        sample_rate=config.sample_rate,
+        use_gpu=config.use_gpu
     )
 
     # 初始化转录引擎（使用 TranscriptionEngineManager 实现智能复用）
@@ -339,16 +348,9 @@ def run_file_transcription(config):
         print(f"  ✗ 转录引擎初始化失败: {e}")
         sys.exit(1)
 
-    # 创建VAD配置
-    vad_config = VadConfig(
-        model=VadModel.SILERO,
-        threshold=0.2,
-        sample_rate=16000,
-        min_speech_duration_ms=250,
-        min_silence_duration_ms=250,
-        max_speech_duration_ms=5000,  # 5秒最大语音段
-        use_sherpa_onnx=True  # 优先使用sherpa-onnx
-    )
+    # 创建VAD配置（使用当前活跃方案）
+    active_profile = config.get_active_vad_profile()
+    vad_config = active_profile.to_vad_config()
 
     # 初始化VAD检测器（使用 VadManager 实现智能复用）
     try:
@@ -499,20 +501,11 @@ def main():
         # 步骤4: 初始化配置管理器
         config_manager = ConfigManager()
 
-        # 步骤5: 解析命令行参数或使用调试模式
+        # 步骤5: 解析命令行参数并加载配置
         try:
-            # 检查是否有命令行参数
-            if len(sys.argv) == 1:
-                # 调试模式：没有提供参数时使用默认配置
-                config = config_manager.get_default_config()
-                # config.model_path = ""  # 占位符，实际使用时需要真实路径
-                print("\n[调试模式] 使用默认配置")
-                print("在生产环境中，请提供正确的命令行参数")
-                print("示例: python main.py --model-path models\\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\\model.onnx --input-source microphone")
-                
-            else:
-                # 正常模式：解析命令行参数
-                config = config_manager.parse_arguments()
+            cli_dict = config_manager.parse_arguments_to_dict()
+            loader = ConfigLoader()
+            config = loader.load(cli_overrides=cli_dict, validate=True)
         except SystemExit as e:
             # argparse 调用了 sys.exit()
             if e.code == 0:

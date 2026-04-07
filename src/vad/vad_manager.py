@@ -173,6 +173,9 @@ class VadManager:
         - use_sherpa_onnx: 是否使用 sherpa-onnx 实现
         - threshold: VAD 阈值
         - sample_rate: 采样率
+        - min_speech_duration_ms / min_silence_duration_ms / max_speech_duration_ms: 分段时长策略
+        - window_size_samples: VAD 窗口大小
+        - model_path: 模型路径（含默认/自定义切换）
 
         Args:
             new_config: 新的配置对象
@@ -204,6 +207,48 @@ class VadManager:
         # 检查采样率是否变化
         if old.sample_rate != new_config.sample_rate:
             logger.debug(f"Sample rate changed: {old.sample_rate} -> {new_config.sample_rate}")
+            return True
+
+        # 检查最小时长参数是否变化
+        if abs(old.min_speech_duration_ms - new_config.min_speech_duration_ms) > 0.001:
+            logger.debug(
+                "Min speech duration changed: %s -> %s",
+                old.min_speech_duration_ms,
+                new_config.min_speech_duration_ms,
+            )
+            return True
+
+        if abs(old.min_silence_duration_ms - new_config.min_silence_duration_ms) > 0.001:
+            logger.debug(
+                "Min silence duration changed: %s -> %s",
+                old.min_silence_duration_ms,
+                new_config.min_silence_duration_ms,
+            )
+            return True
+
+        # 关键修复：max_speech_duration_ms 变化必须触发重载，否则运行中参数不会生效
+        if abs(old.max_speech_duration_ms - new_config.max_speech_duration_ms) > 0.001:
+            logger.debug(
+                "Max speech duration changed: %s -> %s",
+                old.max_speech_duration_ms,
+                new_config.max_speech_duration_ms,
+            )
+            return True
+
+        # 检查窗口大小是否变化
+        if old.window_size_samples != new_config.window_size_samples:
+            logger.debug(
+                "Window size changed: %s -> %s",
+                old.window_size_samples,
+                new_config.window_size_samples,
+            )
+            return True
+
+        # 检查模型路径是否变化（None 与空字符串统一视为未配置）
+        old_model_path = (old.model_path or "").strip()
+        new_model_path = (new_config.model_path or "").strip()
+        if old_model_path != new_model_path:
+            logger.debug("Model path changed: %r -> %r", old.model_path, new_config.model_path)
             return True
 
         # 配置未变化，可以复用

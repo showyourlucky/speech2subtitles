@@ -111,17 +111,52 @@ GUI分为左右两个面板：
 
 ## 配置
 
-### 模型路径
-首次使用需要配置模型路径：
+### 配置文件位置与格式
 
+GUI 配置默认保存在项目根目录：
+
+```text
+config/gui_config.json
 ```
-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx
+
+配置文件采用 `schema v2` 包裹格式：
+
+```json
+{
+  "version": "2.0",
+  "last_modified": "2026-04-07T12:00:00",
+  "config": {
+    "runtime": {},
+    "audio": {},
+    "vad": {},
+    "output": {},
+    "subtitle": {}
+  }
+}
 ```
 
-如果模型文件存在于默认路径，GUI会自动检测。
+### GUI 配置加载与保存行为
 
-### GPU设置
-GUI会自动检测GPU是否可用并显示在状态监控面板中。
+- 启动 GUI 时，配置通过 `ConfigLoader` 加载。
+- 合并优先级与 CLI 保持一致：`CLI(仅显式参数) > ENV > 文件 > 默认`。
+- `config/gui_config.json` 负责保存并提供全部常用参数（模型、VAD、音频、输出、字幕显示）。
+- 未显式传入的 CLI 参数不会覆盖配置文件，系统会继续使用 `gui_config.json` 中当前激活方案的值。
+- 在设置对话框点击“保存”后，会写回 `config/gui_config.json`。
+- 支持“导入配置 / 导出配置”。
+- 导入旧版本配置时会自动迁移到 v2。
+
+### 兼容字段映射（GUI -> v2）
+
+为了兼容旧控件键名，`ConfigBridge.update_config()` 会自动做映射：
+
+- 平铺键示例：`model_path -> runtime.model_path`
+- 平铺键示例：`output_format -> output.format`
+- 嵌套键示例：`subtitle_display.enabled -> subtitle.display.enabled`
+
+### 模型与 GPU
+
+- 模型路径支持在设置对话框中直接选择并验证（`.onnx` / `.bin`）。
+- GUI 会自动检测 GPU 可用性，并允许通过配置开关启用/禁用。
 
 ## 测试导入
 
@@ -266,7 +301,7 @@ python -c "from PySide6.QtWidgets import QApplication; print(QApplication.platfo
 #### 当前版本（v0.1.1）
 
 1. **暂停功能**: 尚未实现，点击暂停按钮会提示功能待开发
-2. **配置持久化**: 配置更改不会保存到文件
+2. **配置持久化**: 已支持，默认保存到 `config/gui_config.json`
 3. **音频设备选择**: 暂不支持选择特定音频设备
 4. **设置界面**: 系统设置对话框尚未实现
 
@@ -280,10 +315,10 @@ python -c "from PySide6.QtWidgets import QApplication; print(QApplication.platfo
   - [ ] 音频设备选择（列表选择）
   - [ ] 采样率配置
   - [ ] 字幕显示配置（字体、颜色、位置、透明度）
-- [ ] **配置持久化**
-  - [ ] 保存配置到JSON/YAML文件
-  - [ ] 启动时自动加载上次配置
-  - [ ] 配置导入/导出
+- [x] **配置持久化**
+  - [x] 保存配置到JSON文件
+  - [x] 启动时自动加载上次配置
+  - [x] 配置导入/导出
 - [ ] **转录历史记录**
   - [ ] 历史记录面板
   - [ ] 搜索和过滤

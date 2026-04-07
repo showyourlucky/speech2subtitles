@@ -3,174 +3,143 @@
 [根目录](../../CLAUDE.md) > [src](../) > **config**
 
 ## 模块职责
-负责系统配置的管理、命令行参数解析、配置验证和默认值设定。提供统一的配置接口，确保所有组件使用一致的配置参数。
+负责系统配置的统一建模、加载合并、命令行参数解析与校验。  
+当前配置体系已升级为 **schema v2**，并保留旧字段访问方式作为兼容代理。
 
-## 入口和启动
-- **主配置管理器**: `manager.py::ConfigManager`
-- **配置数据模型**: `models.py::Config`
-- **调用入口**: 由`main.py`创建ConfigManager实例并解析命令行参数
+## 核心入口
+- `manager.py::ConfigManager`
+  负责 CLI 参数定义、解析和转换为 v2 覆盖字典。
+- `loader.py::ConfigLoader`
+  负责按优先级合并配置源并构建最终 `Config`。
+- `models.py::Config`（兼容导出 `AppConfig = Config`）
+  配置数据模型，包含 v2 分区结构与兼容属性。
 
-## 外部接口
+## 配置合并优先级
+最终配置采用以下覆盖顺序（后者覆盖前者）：
+1. 默认配置（`Config.create_default()`）
+2. 配置文件（`config/gui_config.json` 或指定导入文件）
+3. 环境变量（`S2S_*`）
+4. CLI 参数（仅显式传入的参数会覆盖）
 
-### 主要类和方法
-```python
-# 配置管理器 - 处理命令行解析和验证
-class ConfigManager:
-    def parse_arguments(self, args=None) -> Config  # 解析命令行参数
-    def get_default_config() -> Config              # 获取默认配置
-    def validate_config(self, config: Config) -> bool  # 验证配置有效性
-    def print_config(self, config: Config) -> None  # 打印配置信息
+## schema v2 结构
+配置按分区组织：
+- `runtime`: 输入模式、GPU、转录语言提示、模型方案
+- `audio`: 采样率、块大小、声道、设备 ID
+- `vad`: VAD 方案集合与激活方案
+- `output`: 输出格式、置信度/时间戳显示
+- `subtitle.file`: 离线字幕输出参数
+- `subtitle.display`: 实时字幕显示参数
 
-# 配置数据模型 - 存储所有系统配置
-@dataclass
-class Config:
-    model_path: str                    # sense-voice模型文件路径
-    input_source: str                  # 音频输入源 ("microphone" | "system")
-    use_gpu: bool = True              # 是否启用GPU加速
-    vad_sensitivity: float = 0.5      # VAD敏感度 (0.0-1.0)
-    output_format: str = "text"       # 输出格式 ("text" | "json")
-    device_id: Optional[int] = None   # 音频设备ID
-    sample_rate: int = 16000          # 音频采样率
-    chunk_size: int = 1024            # 音频块大小
-    vad_window_size: float = 0.512    # VAD窗口大小(秒)
-    vad_threshold: float = 0.5        # VAD检测阈值
-    show_confidence: bool = True      # 显示置信度
-    show_timestamp: bool = True       # 显示时间戳
-
-# 音频设备信息
-@dataclass
-class AudioDevice:
-    id: int                           # 设备ID
-    name: str                        # 设备名称
-    channels: int                    # 声道数
-    sample_rate: int                 # 支持的采样率
-    is_input: bool                   # 是否为输入设备
-    is_default: bool = False         # 是否为默认设备
+示例：
+```json
+{
+  "runtime": {
+    "input_source": "microphone",
+    "input_file": null,
+    "use_gpu": true,
+    "transcription_language": "auto",
+    "model": {
+      "active_profile_id": "default",
+      "profiles": {
+        "default": {
+          "profile_id": "default",
+          "profile_name": "默认",
+          "model_path": "models/.../model.onnx"
+        }
+      }
+    }
+  },
+  "audio": {
+    "sample_rate": 16000,
+    "chunk_size": 1024,
+    "channels": 1,
+    "device_id": null
+  },
+  "vad": {
+    "active_profile_id": "default",
+    "profiles": {}
+  },
+  "output": {
+    "format": "text",
+    "show_confidence": true,
+    "show_timestamp": true
+  },
+  "subtitle": {
+    "file": {
+      "output_dir": null,
+      "format": "srt",
+      "keep_temp": false,
+      "verbose": false
+    },
+    "display": {
+      "enabled": false,
+      "position": "bottom",
+      "font_size": 24,
+      "font_family": "Microsoft YaHei",
+      "opacity": 0.8,
+      "max_display_time": 5.0,
+      "text_color": "#FFFFFF",
+      "background_color": "#000000"
+    }
+  }
+}
 ```
 
-### 配置验证规则
-- **模型路径**: 必须存在且为.onnx或.bin格式
-- **输入源**: 必须为"microphone"或"system"
-- **VAD参数**: 敏感度和阈值必须在0.0-1.0之间
-- **采样率**: 必须为[8000, 16000, 22050, 44100, 48000]之一
-- **音频块大小**: 必须在1-8192之间
+## 兼容策略
+`Config` 仍支持旧平铺字段读写，例如：
+- `model_path -> runtime.model.profiles[active].model_path`
+- `input_source -> runtime.input_source`
+- `use_gpu -> runtime.use_gpu`
+- `vad_threshold / vad_sensitivity -> active vad profile.threshold`
+- `output_format -> output.format`
+- `subtitle_format -> subtitle.file.format`
 
-## 关键依赖和配置
+字典反序列化支持两类输入：
+- `Config.from_dict_v2()`：v2 分区结构
+- `Config.from_legacy_dict()`：旧平铺结构（自动迁移）
 
-### 内部依赖
-- `pathlib.Path` - 路径验证
-- `argparse` - 命令行参数解析
-- `dataclasses` - 配置数据结构
+## CLI 显式覆盖映射
+`ConfigManager` 仅在参数被显式传入时生成覆盖键，未传参数始终沿用 `config/gui_config.json`。
+覆盖字段为扁平兼容键，最终由 `Config.from_dict_v2()` 应用到 v2 结构与激活方案：
+- 运行参数：`--model-path`、`--input-source`、`--input-file`
+- 通用参数：`--no-gpu`、`--transcription-language`
+- 音频参数：`--sample-rate`、`--chunk-size`、`--device-id`
+- VAD 参数：`--vad-sensitivity`、`--vad-threshold`、`--vad-window-size`
+- 输出参数：`--output-format`、`--no-confidence`、`--no-timestamp`
+- 字幕文件参数：`--output-dir`、`--subtitle-format`、`--keep-temp`、`--verbose`
+- 字幕显示参数：`--show-subtitles`、`--subtitle-position`、`--subtitle-font-size`、`--subtitle-font-family`、`--subtitle-opacity`、`--subtitle-max-display-time`、`--subtitle-text-color`、`--subtitle-bg-color`
 
-### 配置文件
-- **pyproject.toml**: 项目元信息和依赖管理
-- **requirements.txt**: Python包依赖列表
+## 环境变量支持（S2S_*）
+`ConfigLoader` 支持以下环境变量覆盖：
+- 运行时：`S2S_INPUT_SOURCE`、`S2S_INPUT_FILE`、`S2S_USE_GPU`、`S2S_TRANSCRIPTION_LANGUAGE`、`S2S_MODEL_PATH`、`S2S_MODEL_PROFILE`
+- 音频：`S2S_SAMPLE_RATE`、`S2S_CHUNK_SIZE`、`S2S_CHANNELS`、`S2S_DEVICE_ID`
+- VAD：`S2S_VAD_PROFILE`
+- 输出：`S2S_OUTPUT_FORMAT`、`S2S_SHOW_CONFIDENCE`、`S2S_SHOW_TIMESTAMP`
+- 字幕文件：`S2S_SUBTITLE_FORMAT`、`S2S_OUTPUT_DIR`、`S2S_KEEP_TEMP`、`S2S_VERBOSE`
+- 字幕显示：`S2S_SUBTITLE_ENABLED`、`S2S_SUBTITLE_POSITION`、`S2S_SUBTITLE_FONT_SIZE`、`S2S_SUBTITLE_FONT_FAMILY`、`S2S_SUBTITLE_OPACITY`、`S2S_SUBTITLE_MAX_DISPLAY_TIME`、`S2S_SUBTITLE_TEXT_COLOR`、`S2S_SUBTITLE_BG_COLOR`
 
-### 环境变量支持
-```bash
-# 可选的环境变量配置
-CUDA_VISIBLE_DEVICES=0           # 指定GPU设备
-ONNXRUNTIME_LOG_SEVERITY_LEVEL=3 # ONNX运行时日志级别
-```
+## GUI 侧配置协作
+GUI 通过 `ConfigBridge + ConfigFileManager` 使用同一套配置模型：
+- 持久化文件：`config/gui_config.json`
+- 文件包裹格式：`{ version: "2.0", last_modified, config }`
+- 导入导出：支持 v2 结构；旧版本导入时自动迁移
+- 兼容键映射：`subtitle_display.*` 自动映射到 `subtitle.display.*`
 
-## 数据模型
-
-### 配置验证流程
-1. **参数解析**: 通过argparse解析命令行参数
-2. **数据模型创建**: 将解析结果映射到Config数据类
-3. **自动验证**: Config.__post_init__触发validate()方法
-4. **错误处理**: 验证失败抛出ValueError异常
-
-### 默认配置策略
+## 推荐使用方式
 ```python
-# 获取带默认值的配置实例
-config = ConfigManager().get_default_config()
-config.model_path = "path/to/model.onnx"  # 唯一需要手动设置的参数
-```
-
-### 音频设备管理
-```python
-# AudioDevice类提供设备信息的标准化表示
-device = AudioDevice(
-    id=0,
-    name="默认麦克风",
-    channels=2,
-    sample_rate=44100,
-    is_input=True,
-    is_default=True
-)
-print(device)  # 自动格式化输出设备信息
-```
-
-## 测试和质量保证
-
-### 单元测试覆盖
-- **配置验证测试**: `tests/test_config.py`
-  - 有效配置验证
-  - 无效配置异常处理
-  - 默认值设置验证
-  - 边界值测试
-
-### 测试用例示例
-```python
-def test_config_validation():
-    """测试配置验证功能"""
-    # 测试有效配置
-    config = Config(
-        model_path="models/valid_model.onnx",
-        input_source="microphone"
-    )
-    assert config.validate() is None  # 无异常表示验证通过
-
-    # 测试无效VAD敏感度
-    with pytest.raises(ValueError):
-        Config(
-            model_path="models/valid_model.onnx",
-            input_source="microphone",
-            vad_sensitivity=1.5  # 超出有效范围
-        )
-```
-
-### 使用示例
-```python
-# 基本用法 - 解析命令行参数
 from src.config.manager import ConfigManager
+from src.config.loader import ConfigLoader
 
-config_manager = ConfigManager()
-config = config_manager.parse_arguments()
-print(f"使用模型: {config.model_path}")
-print(f"输入源: {config.input_source}")
-
-# 编程方式创建配置
-config = Config(
-    model_path="models/sense-voice.onnx",
-    input_source="microphone",
-    use_gpu=True,
-    vad_sensitivity=0.6
-)
-
-# 打印配置信息
-config_manager.print_config(config)
+manager = ConfigManager()
+cli_overrides = manager.parse_cli_overrides()
+config = ConfigLoader().load(cli_overrides=cli_overrides, validate=True)
 ```
 
-## 常见问题 (FAQ)
+## 测试与验证
+- 配置模型测试：`tests/test_config.py`
+- 语法检查：`python -m py_compile src/config/models.py src/config/loader.py src/config/manager.py`
+- 说明：`tests/test_integration.py` 当前存在与输出模块导入相关的问题，和本次配置重构逻辑无直接耦合。
 
-### Q: 如何添加新的配置参数？
-A: 1. 在Config数据类中添加新字段
-   2. 在ConfigManager._create_parser()中添加命令行参数
-   3. 在parse_arguments()中处理新参数
-   4. 在validate()中添加验证逻辑
-
-### Q: 配置验证失败如何调试？
-A: 查看ValueError异常信息，通常包含具体的验证失败原因和建议的解决方案
-
-### Q: 如何支持配置文件输入？
-A: 当前版本仅支持命令行参数，可扩展ConfigManager添加配置文件解析功能
-
-## 相关文件列表
-- `manager.py` - 配置管理器实现，命令行参数解析
-- `models.py` - 配置数据模型和验证逻辑
-- `__init__.py` - 模块初始化文件
-
-## 变更日志 (Changelog)
-- **2025-09-27**: 创建配置管理模块文档，包含完整的API说明和使用示例
+## 变更记录
+- **2026-04-07**: CLI 覆盖策略调整为“仅显式传参覆盖”；`Config.from_dict_v2()` 增加 flat 兼容覆盖应用，确保未传参时完整沿用 `config/gui_config.json`（含 `active_vad_profile_id` 激活方案参数）。
+- **2026-04-07**: 文档同步到 schema v2，补充 ConfigLoader 优先级、CLI/ENV 对照与 GUI 配置协作说明。

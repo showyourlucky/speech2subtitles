@@ -5,6 +5,7 @@ Provides system configuration management and command line argument parsing funct
 """
 
 from .manager import ConfigManager
-from .models import Config, AudioDevice
+from .models import Config, AppConfig, AudioDevice
+from .loader import ConfigLoader
 
-__all__ = ["ConfigManager", "Config", "AudioDevice"]
+__all__ = ["ConfigManager", "Config", "AppConfig", "AudioDevice", "ConfigLoader"]

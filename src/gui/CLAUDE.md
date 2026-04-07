@@ -27,10 +27,15 @@ gui/
 │   ├── gui_models.py        - GUI数据模型
 │   └── history_models.py    - 历史记录模型
 └── storage/                 - 存储管理
-    ├── config_file_manager.py  - 配置文件管理
     ├── history_manager.py      - 历史记录管理
     └── exporters.py            - 导出器
 ```
+
+## 配置文件说明
+- GUI 配置文件采用 `schema v2 (version=2.0)`，由 `src/config/file_manager.py` 统一读写与迁移。
+- 旧版扁平结构会在加载时迁移为 v2 结构。
+- `config/gui_config.json` 作为默认参数来源，包含运行期会用到的全部配置项（模型、VAD、音频、输出、字幕显示等）。
+- CLI 仅对“显式传入”的参数生效，未显式传入时保持 GUI 配置文件中的当前值与激活方案。
 
 ## 主要功能
 

@@ -192,14 +192,19 @@ python main.py \
 
 ### 命令行参数
 
-#### 必需参数
-- `--model-path`：sense-voice模型文件路径
-- `--input-source` 或 `--input-file`：选择运行模式（二选一）
+#### 运行模式参数（可选）
+- `--model-path`：sense-voice模型文件路径（未传时使用 `config/gui_config.json` 中激活模型方案）
+- `--input-source` 或 `--input-file`：选择运行模式（二选一，未传时使用 `config/gui_config.json`）
   - `--input-source`：实时音频转录（`microphone` 或 `system`）
   - `--input-file`：离线文件转字幕（文件/目录路径）
 
+#### CLI 覆盖规则
+- `config/gui_config.json` 是默认配置来源，建议在其中配置所有常用参数。
+- CLI 仅覆盖显式传入的参数；未显式传入时，不会用 CLI 默认值覆盖配置文件。
+
 #### 实时转录可选参数
-- `--vad-sensitivity`：VAD敏感度（0.0-1.0，默认0.5）
+- `--vad-sensitivity`：VAD敏感度（0.0-1.0，默认0.5，兼容参数）
+- `--transcription-language`：转录语言提示（`auto`/`zh`/`en`）
 - `--output-format`：输出格式（text/json，默认text）
 - `--device-id`：指定音频设备ID
 - `--no-confidence`：不显示置信度
@@ -216,6 +221,16 @@ python main.py \
 - `--sample-rate`：采样率（默认16000Hz）
 - `--vad-threshold`：VAD阈值（默认0.5）
 - `--help`：显示帮助信息
+
+#### 屏幕字幕显示参数（仅 `--input-source` 模式）
+- `--show-subtitles`：启用屏幕字幕显示
+- `--subtitle-position`：字幕位置（`top`/`center`/`bottom`）
+- `--subtitle-font-size`：字幕字号
+- `--subtitle-font-family`：字幕字体
+- `--subtitle-opacity`：字幕透明度（0.1-1.0）
+- `--subtitle-max-display-time`：单条字幕最大显示时长（秒）
+- `--subtitle-text-color`：字幕文字颜色（十六进制）
+- `--subtitle-bg-color`：字幕背景颜色（十六进制）
 
 ### 音频输入源说明
 
@@ -245,6 +260,247 @@ VAD敏感度参数控制语音检测的灵敏度：
 
 ## 🔧 配置文件
 
+### 配置体系（schema v2）
+
+当前配置采用分区结构（`runtime/audio/vad/output/subtitle`），并通过 `ConfigLoader` 统一合并多来源配置。
+
+合并优先级（高到低）：
+- CLI 参数（仅显式传入）
+- 环境变量（`S2S_*`）
+- 配置文件
+- 默认配置
+
+默认 GUI 配置文件位置：
+
+```text
+config/gui_config.json
+```
+
+建议在 `config/gui_config.json` 中维护完整配置（`runtime/audio/vad/output/subtitle` 及激活方案），这样启动时无需重复传参。
+
+配置文件外层包含版本信息，例如：
+
+```json
+{
+  "version": "2.0",
+  "last_modified": "2026-04-07T12:00:00",
+  "config": {
+    "runtime": {},
+    "audio": {},
+    "vad": {},
+    "output": {},
+    "subtitle": {}
+  }
+}
+```
+
+### gui_config.json 全参数说明（作用 / 配法 / 效果）
+
+> 说明：系统同时兼容“扁平字段”和 `schema v2` 分区结构。  
+> 推荐优先使用 `schema v2`（`runtime/audio/vad/output/subtitle`），可读性和可维护性更好。  
+> 若仅修改少量参数，也可继续用扁平字段，系统会做兼容映射。
+
+#### 外层包装字段
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `version` | 配置文件版本号 | 推荐 `2.0` | 便于版本迁移与兼容处理 |
+| `last_modified` | 最近修改时间 | ISO 时间字符串 | 便于排查“配置何时被改动” |
+| `config` | 实际业务配置对象 | 保持对象结构完整 | 系统启动时读取的核心配置 |
+
+#### 运行与模型字段
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `input_source` | 实时输入源 | `microphone` 或 `system` | 决定实时模式是麦克风还是系统内录 |
+| `input_file` | 离线输入文件/目录 | `null` 或文件数组 | 启用离线批量转字幕模式 |
+| `use_gpu` | 是否使用 GPU | 有 CUDA 则 `true` | 开启后速度更快、占用显存更多 |
+| `transcription_language` | 转录语言提示 | `auto`/`zh`/`en` | 固定语言可降低误判，`auto` 更通用 |
+| `model_profiles` | 模型方案集合 | 至少保留一个方案 | 支持“不同模型一键切换” |
+| `active_model_profile_id` | 当前启用模型方案 ID | 指向 `model_profiles` 中存在的 ID | 决定实际使用哪个模型 |
+| `model_path`（兼容） | 当前模型路径（旧字段） | 可保留，建议由方案管理 | 兼容旧配置与脚本调用 |
+
+`model_profiles.<profile_id>` 子字段说明：
+
+| 子字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `profile_id` | 模型方案唯一标识 | 稳定、不可重复 | 供 `active_model_profile_id` 引用 |
+| `profile_name` | 展示名称 | 如 `默认`/`int8`/`高精度` | GUI 选择更直观 |
+| `model_path` | 模型文件路径 | 指向存在的 `.onnx`/`.bin` | 决定识别能力、速度、显存占用 |
+| `description` | 方案备注 | 场景描述 | 便于团队协作与维护 |
+| `supported_languages` | 支持语言列表 | 如 `["zh","en"]` | 帮助区分多语言模型用途 |
+
+#### 音频字段
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `sample_rate` | 采样率 | `16000`（推荐） | 更高采样率可保留更多细节，但计算负担更高 |
+| `chunk_size` | 音频分块大小 | `512`~`2048` | 小块更低延迟；大块更稳、更省 CPU 调度 |
+| `channels` | 声道数 | `1` | 单声道通常足够，资源占用更低 |
+| `device_id` | 指定音频设备 | `null` 或有效设备 ID | 多设备场景可固定输入设备 |
+
+#### VAD（语音活动检测）字段
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `vad_profiles` | VAD 方案集合 | 至少保留一个方案 | 支持按场景切换（安静/嘈杂） |
+| `active_vad_profile_id` | 当前启用 VAD 方案 ID | 指向 `vad_profiles` 中存在的 ID | 决定实时切分与触发行为 |
+| `vad_threshold`（兼容） | 当前阈值（0.0~1.0） | `0.4`~`0.6` | 越低越敏感；越高越“保守” |
+| `vad_sensitivity`（兼容） | 兼容字段，等价阈值 | 与 `vad_threshold` 二选一 | 兼容老参数名 |
+| `vad_window_size`（兼容） | 窗口时长（秒） | `0.32`~`0.64` | 小窗口响应更快；大窗口更平滑 |
+
+`vad_profiles.<profile_id>` 子字段说明：
+
+| 子字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `threshold` | 语音检测阈值 | `0.4`~`0.6` | 低阈值可捕捉弱语音但更易误触发 |
+| `min_speech_duration_ms` | 最短语音时长 | `80`~`250` | 太小会产生碎片文本，太大可能漏短词 |
+| `min_silence_duration_ms` | 最短静音时长 | `120`~`300` | 越小分句越快，越大句子更完整 |
+| `max_speech_duration_ms` | 最长语音时长 | `10000`~`30000` | 控制超长连续语音的切段行为 |
+| `sample_rate` | 该方案采样率 | 与全局一致（常用 16000） | 不一致可能导致效果不稳定 |
+| `model` | VAD 模型类型 | `silero_vad` 或 `ten_vad` | 影响检测风格与性能 |
+| `model_path` | VAD 模型路径 | 可空或指定文件路径 | 指定后可锁定模型版本 |
+| `use_sherpa_onnx` | 是否走 sherpa-onnx 管线 | `true` | 与现有工程默认一致 |
+| `window_size_samples` | 窗口采样点数 | 16k 采样率下常用 `512` | 越小响应越快，越大越稳 |
+
+#### 输出与字幕文件字段
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `output_format` | 实时输出格式 | `text` 或 `json` | `json` 更适合二次处理与调试 |
+| `show_confidence` | 是否显示置信度 | 调试时 `true` | 便于判断识别质量 |
+| `show_timestamp` | 是否显示时间戳 | 字幕对齐场景 `true` | 便于排查切分和对齐问题 |
+| `output_dir` | 离线字幕输出目录 | 显式指定目录 | 便于批量任务统一归档 |
+| `subtitle_format` | 字幕格式 | `srt`/`vtt`/`ass` | 不同播放器和剪辑工具兼容性不同 |
+| `keep_temp` | 是否保留临时文件 | 调试时 `true`，日常 `false` | 开启后便于问题定位，但占磁盘 |
+| `verbose` | 是否输出详细日志 | 调优时 `true` | 提供更细粒度处理过程信息 |
+
+#### 字幕显示字段（`subtitle_display`）
+
+| 字段 | 作用 | 建议配置 | 影响效果 |
+| --- | --- | --- | --- |
+| `enabled` | 是否启用悬浮字幕 | 实时演示场景 `true` | 屏幕实时显示识别文本 |
+| `position` | 字幕位置 | `bottom` | 控制字幕在屏幕显示区域 |
+| `font_size` | 字号 | `20`~`30` | 大字号更清晰，小字号遮挡更少 |
+| `font_family` | 字体 | 如 `Microsoft YaHei` | 影响可读性与风格 |
+| `opacity` | 透明度（0.1~1.0） | `0.7`~`0.9` | 高透明度更醒目，低透明度更不遮挡 |
+| `max_display_time` | 单条字幕最大显示时间（秒） | `3.0`~`6.0` | 控制字幕停留时长 |
+| `text_color` | 文字颜色 | `#FFFFFF` | 影响对比度与可读性 |
+| `background_color` | 背景色 | `#000000` | 与文字形成对比，提升可见性 |
+
+### 常用配置方案（按效果选）
+
+#### 1) 低延迟实时会议（响应优先）
+
+```json
+{
+  "config": {
+    "input_source": "system",
+    "use_gpu": true,
+    "sample_rate": 16000,
+    "chunk_size": 512,
+    "active_vad_profile_id": "meeting_fast",
+    "vad_profiles": {
+      "meeting_fast": {
+        "profile_name": "会议低延迟",
+        "profile_id": "meeting_fast",
+        "threshold": 0.45,
+        "min_speech_duration_ms": 100.0,
+        "min_silence_duration_ms": 120.0,
+        "max_speech_duration_ms": 15000.0,
+        "sample_rate": 16000,
+        "model": "silero_vad",
+        "model_path": null,
+        "use_sherpa_onnx": true,
+        "window_size_samples": 512
+      }
+    }
+  }
+}
+```
+
+效果：触发快、延迟低，适合直播字幕和会议跟打。
+
+#### 2) 高准确率离线字幕（质量优先）
+
+```json
+{
+  "config": {
+    "input_file": ["./videos/lesson.mp4"],
+    "use_gpu": true,
+    "chunk_size": 2048,
+    "output_format": "json",
+    "show_confidence": true,
+    "show_timestamp": true,
+    "subtitle_format": "srt",
+    "output_dir": "./subtitles"
+  }
+}
+```
+
+效果：信息更完整、可复盘性更好，适合课程和访谈素材整理。
+
+#### 3) 嘈杂环境防误触发（抗噪优先）
+
+```json
+{
+  "config": {
+    "active_vad_profile_id": "noisy_env",
+    "vad_profiles": {
+      "noisy_env": {
+        "profile_name": "嘈杂环境",
+        "profile_id": "noisy_env",
+        "threshold": 0.65,
+        "min_speech_duration_ms": 180.0,
+        "min_silence_duration_ms": 260.0,
+        "max_speech_duration_ms": 30000.0,
+        "sample_rate": 16000,
+        "model": "silero_vad",
+        "model_path": null,
+        "use_sherpa_onnx": true,
+        "window_size_samples": 512
+      }
+    }
+  }
+}
+```
+
+效果：背景噪声触发明显减少，但对很轻的语音可能更“迟钝”。
+
+#### 4) 安静环境弱语音捕捉（灵敏优先）
+
+```json
+{
+  "config": {
+    "active_vad_profile_id": "quiet_sensitive",
+    "vad_profiles": {
+      "quiet_sensitive": {
+        "profile_name": "安静环境高灵敏",
+        "profile_id": "quiet_sensitive",
+        "threshold": 0.35,
+        "min_speech_duration_ms": 80.0,
+        "min_silence_duration_ms": 140.0,
+        "max_speech_duration_ms": 20000.0,
+        "sample_rate": 16000,
+        "model": "silero_vad",
+        "model_path": null,
+        "use_sherpa_onnx": true,
+        "window_size_samples": 512
+      }
+    }
+  }
+}
+```
+
+效果：能捕获更轻微的语音，但更容易把环境音识别成语音。
+
+### 调优顺序建议（最省时间）
+
+1. 先确认 `active_model_profile_id` 与 `active_vad_profile_id` 正确。
+2. 再调 `threshold`（先每次改 0.05）。
+3. 再调 `min_silence_duration_ms` 与 `chunk_size`，平衡“响应速度 vs 分句稳定”。
+4. 最后根据观感微调 `subtitle_display`（字号、透明度、颜色）。
+
 ### 项目结构
 ```
 speech2subtitles/
@@ -264,17 +520,37 @@ speech2subtitles/
 │   └── utils/               # 工具函数
 ├── tests/                   # 测试文件
 ├── tools/                   # 调试工具
-└── .spec-workflow/          # 规范文档
+└── openspec/                # 规范文档
 ```
 
-### 环境变量（可选）
+### 环境变量（可选，`S2S_*`）
 ```bash
-# GPU相关
-export CUDA_VISIBLE_DEVICES=0
-export ONNXRUNTIME_LOG_SEVERITY_LEVEL=3
+# 运行时
+S2S_INPUT_SOURCE=microphone
+S2S_USE_GPU=true
+S2S_TRANSCRIPTION_LANGUAGE=auto
+S2S_MODEL_PATH=models/your-model/model.onnx
 
-# 音频相关
-export PULSE_RUNTIME_PATH=/tmp/pulse
+# 音频
+S2S_SAMPLE_RATE=16000
+S2S_CHUNK_SIZE=1024
+S2S_DEVICE_ID=0
+
+# 输出
+S2S_OUTPUT_FORMAT=text
+S2S_SHOW_CONFIDENCE=true
+S2S_SHOW_TIMESTAMP=true
+
+# 字幕文件输出
+S2S_SUBTITLE_FORMAT=srt
+S2S_OUTPUT_DIR=./subtitles
+S2S_KEEP_TEMP=false
+
+# 屏幕字幕显示
+S2S_SUBTITLE_ENABLED=true
+S2S_SUBTITLE_POSITION=bottom
+S2S_SUBTITLE_FONT_SIZE=24
+S2S_SUBTITLE_OPACITY=0.8
 ```
 
 ## 🛠️ 故障排除

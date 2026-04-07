@@ -11,7 +11,7 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-
+# python tests\test_vad-system.py --output-mode transcribe --mono-method first --block-seconds 0.05
 
 def _apply_numpy_fromstring_binary_compat() -> None:
     """

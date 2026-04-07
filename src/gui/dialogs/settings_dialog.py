@@ -297,8 +297,7 @@ class SettingsDialog(QDialog):
         Returns:
             Config: 克隆的配置对象
         """
-        from dataclasses import asdict
-        return Config(**asdict(config))
+        return Config.from_dict(config.to_dict())
 
     def _ensure_audio_input_mutual_exclusion(self) -> None:
         """确保音频输入配置的互斥性

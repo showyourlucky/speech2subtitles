@@ -5,12 +5,12 @@
 import logging
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
-from dataclasses import asdict
 from datetime import datetime
 
 from src.config.manager import ConfigManager
-from src.config.models import Config, SubtitleDisplayConfig, VadProfile, ModelProfile
-from src.gui.storage.config_file_manager import ConfigFileManager
+from src.config.models import Config, VadProfile, ModelProfile
+from src.config.file_manager import ConfigFileManager
+from src.config.loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ class ConfigBridge:
         """初始化配置桥接器"""
         self.config_manager = ConfigManager()
         self.file_manager = ConfigFileManager()  # 新增：文件管理器
+        self.loader = ConfigLoader(self.file_manager)
         self._current_config: Optional[Config] = None
         logger.info("ConfigBridge initialized")
 
@@ -48,25 +49,20 @@ class ConfigBridge:
         Returns:
             Config: 配置对象
         """
-        if config_file:
-            # 从指定文件导入
-            config, error = self.file_manager.import_config(config_file)
-            if config:
+        try:
+            if config_file:
+                config = self.loader.load(config_path=config_file, validate=False)
                 self._current_config = config
                 return config
-            logger.warning(f"Failed to import config: {error}")
 
-        # 尝试从默认位置加载
-        config = self.file_manager.load_config()
-        if config:
+            config = self.loader.load(validate=False)
             self._current_config = config
-            logger.info("Config loaded from file")
+            logger.info("Config loaded via ConfigLoader")
             return config
-
-        # 使用默认配置
-        self._current_config = self.config_manager.get_default_config()
-        logger.info("Using default configuration")
-        return self._current_config
+        except Exception as e:
+            logger.error(f"配置加载失败: {e}")
+            self._current_config = self.config_manager.get_default_config()
+            return self._current_config
 
     def save_config(self, config: Config, config_file: Optional[str] = None) -> bool:
         """保存配置
@@ -119,9 +115,14 @@ class ConfigBridge:
             for key, value in updates.items():
                 if '.' in key:
                     # 支持嵌套配置更新，如 "subtitle_display.enabled"
-                    self._set_nested_value(config_dict, key, value)
+                    nested_key = self._map_nested_key(key)
+                    self._set_nested_value(config_dict, nested_key, value)
                 else:
-                    config_dict[key] = value
+                    mapped_key = self._map_flat_key(key)
+                    if mapped_key:
+                        self._set_nested_value(config_dict, mapped_key, value)
+                    else:
+                        config_dict[key] = value
 
             # 重建配置对象
             new_config = self._dict_to_config(config_dict)
@@ -173,12 +174,12 @@ class ConfigBridge:
         Returns:
             Dict: 配置字典
         """
-        return asdict(config)
+        return config.to_dict()
 
     def _dict_to_config(self, config_dict: Dict[str, Any]) -> Config:
         """将字典转换为Config对象
 
-        正确处理嵌套配置对象（如SubtitleDisplayConfig）
+        正确处理嵌套配置对象
 
         Args:
             config_dict: 配置字典
@@ -186,48 +187,7 @@ class ConfigBridge:
         Returns:
             Config: Config对象
         """
-        # 创建配置字典副本，避免修改原始数据
-        config_copy = config_dict.copy()
-
-        # 处理嵌套的SubtitleDisplayConfig
-        if 'subtitle_display' in config_copy:
-            subtitle_config = config_copy['subtitle_display']
-            if isinstance(subtitle_config, dict):
-                # 将字典转换为SubtitleDisplayConfig对象
-                config_copy['subtitle_display'] = SubtitleDisplayConfig(**subtitle_config)
-            # 如果已经是SubtitleDisplayConfig对象，保持不变
-
-        # 处理嵌套的VadProfile字典
-        if 'vad_profiles' in config_copy:
-            vad_profiles = config_copy['vad_profiles']
-            if isinstance(vad_profiles, dict):
-                # 检查是否所有值都已经是VadProfile对象
-                converted_profiles = {}
-                for profile_id, profile_data in vad_profiles.items():
-                    if isinstance(profile_data, dict):
-                        # 将字典转换为VadProfile对象
-                        converted_profiles[profile_id] = VadProfile(**profile_data)
-                    elif isinstance(profile_data, VadProfile):
-                        # 已经是VadProfile对象，直接使用
-                        converted_profiles[profile_id] = profile_data
-                config_copy['vad_profiles'] = converted_profiles
-
-        # 处理嵌套的ModelProfile字典
-        if 'model_profiles' in config_copy:
-            model_profiles = config_copy['model_profiles']
-            if isinstance(model_profiles, dict):
-                # 检查是否所有值都已经是ModelProfile对象
-                converted_profiles = {}
-                for profile_id, profile_data in model_profiles.items():
-                    if isinstance(profile_data, dict):
-                        # 将字典转换为ModelProfile对象
-                        converted_profiles[profile_id] = ModelProfile.from_dict(profile_data)
-                    elif isinstance(profile_data, ModelProfile):
-                        # 已经是ModelProfile对象，直接使用
-                        converted_profiles[profile_id] = profile_data
-                config_copy['model_profiles'] = converted_profiles
-
-        return Config(**config_copy)
+        return Config.from_dict(config_dict)
 
     def _set_nested_value(self, d: Dict, path: str, value: Any) -> None:
         """设置嵌套字典的值
@@ -241,6 +201,35 @@ class ConfigBridge:
         for key in keys[:-1]:
             d = d.setdefault(key, {})
         d[keys[-1]] = value
+
+    def _map_nested_key(self, key: str) -> str:
+        """将旧的嵌套键前缀映射到schema v2"""
+        if key.startswith("subtitle_display."):
+            return key.replace("subtitle_display.", "subtitle.display.", 1)
+        return key
+
+    def _map_flat_key(self, key: str) -> Optional[str]:
+        """将旧的平铺字段映射到schema v2路径"""
+        mapping = {
+            "model_path": "runtime.model_path",
+            "input_source": "runtime.input_source",
+            "input_file": "runtime.input_file",
+            "use_gpu": "runtime.use_gpu",
+            "transcription_language": "runtime.transcription_language",
+            "sample_rate": "audio.sample_rate",
+            "chunk_size": "audio.chunk_size",
+            "channels": "audio.channels",
+            "device_id": "audio.device_id",
+            "output_format": "output.format",
+            "show_confidence": "output.show_confidence",
+            "show_timestamp": "output.show_timestamp",
+            "output_dir": "subtitle.file.output_dir",
+            "subtitle_format": "subtitle.file.format",
+            "keep_temp": "subtitle.file.keep_temp",
+            "verbose": "subtitle.file.verbose",
+            "subtitle_display": "subtitle.display",
+        }
+        return mapping.get(key)
 
     # ========== VAD方案管理方法 ==========
 
@@ -437,6 +426,7 @@ class ConfigBridge:
             source_profile = self._current_config.vad_profiles[source_profile_id]
             new_profile = VadProfile(
                 profile_name=new_profile_name,
+                profile_id="",  # Will be auto-generated in __post_init__
                 threshold=source_profile.threshold,
                 min_speech_duration_ms=source_profile.min_speech_duration_ms,
                 min_silence_duration_ms=source_profile.min_silence_duration_ms,

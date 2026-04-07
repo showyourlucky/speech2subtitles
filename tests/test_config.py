@@ -26,10 +26,9 @@ class TestConfig:
         temp_model.touch()
 
         try:
-            config = Config(
-                model_path=str(temp_model),
-                input_source="microphone"
-            )
+            config = Config()
+            config.model_path = str(temp_model)
+            config.input_source = "microphone"
             # 如果没有抛出异常，说明配置有效
             assert config.model_path == str(temp_model)
             assert config.input_source == "microphone"
@@ -40,10 +39,10 @@ class TestConfig:
     def test_invalid_model_path(self):
         """测试无效模型路径"""
         with pytest.raises(ValueError, match="模型文件不存在"):
-            Config(
-                model_path="nonexistent.onnx",
-                input_source="microphone"
-            )
+            config = Config()
+            config.model_path = "nonexistent.onnx"
+            config.input_source = "microphone"
+            config.validate()
 
     def test_invalid_input_source(self):
         """测试无效输入源"""
@@ -52,10 +51,10 @@ class TestConfig:
 
         try:
             with pytest.raises(ValueError, match="不支持的输入源"):
-                Config(
-                    model_path=str(temp_model),
-                    input_source="invalid_source"
-                )
+                config = Config()
+                config.model_path = str(temp_model)
+                config.input_source = "invalid_source"
+                config.validate()
         finally:
             temp_model.unlink(missing_ok=True)
 
@@ -65,14 +64,63 @@ class TestConfig:
         temp_model.touch()
 
         try:
-            with pytest.raises(ValueError, match="VAD敏感度必须在0.0-1.0之间"):
-                Config(
-                    model_path=str(temp_model),
-                    input_source="microphone",
-                    vad_sensitivity=1.5
-                )
+            with pytest.raises(ValueError, match="VAD阈值必须在0.0-1.0之间"):
+                config = Config()
+                config.model_path = str(temp_model)
+                config.input_source = "microphone"
+                config.vad_sensitivity = 1.5
+                config.validate()
         finally:
             temp_model.unlink(missing_ok=True)
+
+    def test_from_dict_v2_should_apply_flat_overrides_to_active_vad_profile(self):
+        """测试v2结构中混用flat覆盖键时，覆盖会作用于激活VAD方案"""
+        config = Config.from_dict_v2({
+            "runtime": {
+                "input_source": "microphone",
+                "model": {
+                    "active_profile_id": "default",
+                    "profiles": {
+                        "default": {
+                            "profile_id": "default",
+                            "profile_name": "默认",
+                            "model_path": "test_model.onnx"
+                        }
+                    }
+                }
+            },
+            "audio": {
+                "sample_rate": 16000,
+                "chunk_size": 1024,
+                "channels": 1
+            },
+            "vad": {
+                "active_profile_id": "profile_custom",
+                "profiles": {
+                    "default": {
+                        "profile_name": "默认",
+                        "profile_id": "default",
+                        "threshold": 0.2
+                    },
+                    "profile_custom": {
+                        "profile_name": "自定义",
+                        "profile_id": "profile_custom",
+                        "threshold": 0.3
+                    }
+                }
+            },
+            "subtitle": {
+                "file": {},
+                "display": {}
+            },
+            "vad_threshold": 0.85,
+            "vad_window_size": 0.256
+        })
+
+        assert config.active_vad_profile_id == "profile_custom"
+        assert config.vad_profiles["profile_custom"].threshold == 0.85
+        assert config.vad_profiles["profile_custom"].window_size_samples == int(0.256 * 16000)
+        assert config.vad_profiles["default"].threshold == 0.2
 
 
 class TestConfigManager:
@@ -138,6 +186,50 @@ class TestConfigManager:
         assert config.vad_sensitivity == 0.5
         assert config.sample_rate == 16000
         assert config.output_format == "text"
+
+    def test_parse_cli_overrides_without_explicit_args_returns_empty_dict(self):
+        """测试未显式传参时，不生成任何CLI覆盖字段"""
+        manager = ConfigManager()
+        cli_dict = manager.parse_arguments_to_dict([])
+        assert cli_dict == {}
+
+    def test_cli_overrides_without_vad_args_should_not_include_vad_fields(self):
+        """测试未显式传入VAD参数时，不生成VAD覆盖字段"""
+        temp_model = Path("test_model.onnx")
+        temp_model.touch()
+
+        try:
+            manager = ConfigManager()
+            cli_dict = manager.parse_arguments_to_dict([
+                "--model-path", str(temp_model),
+                "--input-source", "microphone"
+            ])
+
+            assert cli_dict["model_path"] == str(temp_model)
+            assert cli_dict["input_source"] == "microphone"
+            assert "vad_threshold" not in cli_dict
+            assert "vad_window_size" not in cli_dict
+        finally:
+            temp_model.unlink(missing_ok=True)
+
+    def test_cli_overrides_with_vad_args_should_include_vad_fields(self):
+        """测试显式传入VAD参数时，应生成VAD flat覆盖字段"""
+        temp_model = Path("test_model.onnx")
+        temp_model.touch()
+
+        try:
+            manager = ConfigManager()
+            cli_dict = manager.parse_arguments_to_dict([
+                "--model-path", str(temp_model),
+                "--input-source", "microphone",
+                "--vad-sensitivity", "0.8",
+                "--vad-window-size", "0.256"
+            ])
+
+            assert cli_dict["vad_threshold"] == 0.8
+            assert cli_dict["vad_window_size"] == 0.256
+        finally:
+            temp_model.unlink(missing_ok=True)
 
 
 class TestAudioDevice:

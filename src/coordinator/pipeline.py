@@ -9,7 +9,6 @@ import threading  # 多线程支持
 import time  # 时间相关操作
 import signal  # 信号处理（用于优雅停止）
 import sys  # 系统相关功能
-import os  # 环境变量
 import numpy as np  # 数值计算
 from typing import Optional, List, Callable, Dict, Any  # 类型注解
 from queue import Queue, Empty  # 线程安全队列和空队列异常
@@ -189,13 +188,10 @@ class TranscriptionPipeline:
 
         规则：
         1. 若配置中显式提供 transcription_language，则优先使用。
-        2. 若未配置，则读取环境变量 S2S_TRANSCRIPTION_LANGUAGE。
-        3. 系统音频默认使用中文提示，降低 auto 在中日同音场景下误判概率。
-        4. 其它场景回退为自动识别。
+        2. 若未配置且为系统音频，默认使用中文提示，降低 auto 在中日同音场景下误判概率。
+        3. 其它场景回退为自动识别。
         """
         raw_language = getattr(self.config, "transcription_language", None)
-        if raw_language is None:
-            raw_language = os.getenv("S2S_TRANSCRIPTION_LANGUAGE")
         if raw_language is not None:
             normalized = str(raw_language).strip().lower()
             if normalized in {"zh", "zh-cn", "chinese", "cn"}:
@@ -204,7 +200,7 @@ class TranscriptionPipeline:
                 return LanguageCode.ENGLISH
             if normalized in {"auto", "自动"}:
                 return LanguageCode.AUTO
-            logger.warning(f"未识别的 transcription_language 配置: {raw_language}，已回退到自动识别")
+            logger.warning(f"未识别的 transcription_language 配置: {raw_language}，已回退到默认策略")
 
         if getattr(self.config, "input_source", None) == "system":
             logger.info("系统音频默认启用中文识别提示(language=zh)，可降低中日混淆导致的漏字")

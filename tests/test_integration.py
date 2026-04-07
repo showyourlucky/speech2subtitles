@@ -316,15 +316,14 @@ class TestFullPipelineIntegration:
         mock_sherpa.OnlineRecognizer.return_value = mock_recognizer
 
         # 创建完整配置
-        config = Config(
-            model_path="test_model.onnx",
-            input_source="microphone",
-            use_gpu=False,
-            vad_sensitivity=0.7,
-            output_format="text",
-            show_confidence=True,
-            show_timestamp=True
-        )
+        config = Config()
+        config.model_path = "test_model.onnx"
+        config.input_source = "microphone"
+        config.use_gpu = False
+        config.vad_sensitivity = 0.7
+        config.output_format = "text"
+        config.show_confidence = True
+        config.show_timestamp = True
 
         # 验证配置完整性
         assert config.model_path is not None

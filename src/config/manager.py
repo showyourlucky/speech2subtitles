@@ -6,10 +6,9 @@
 
 import argparse
 import sys
-from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, Set, List
 
-from .models import Config, SubtitleDisplayConfig
+from .models import Config
 
 
 class ConfigManager:
@@ -28,13 +27,13 @@ class ConfigManager:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 使用示例 - 实时转录:
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source microphone
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-source system --no-gpu
+  %(prog)s --model-path models\\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\\model.onnx --input-source microphone
+  %(prog)s --model-path models\\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\\model.onnx --input-source system --no-gpu
 
 使用示例 - 媒体文件转字幕:
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video.mp4
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file video1.mp4 audio1.mp3 --output-dir subtitles/
-  %(prog)s --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\model.onnx --input-file videos/ --subtitle-format srt
+  %(prog)s --model-path models\\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\\model.onnx --input-file video.mp4
+  %(prog)s --model-path models\\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\\model.onnx --input-file video1.mp4 audio1.mp3 --output-dir subtitles/
+  %(prog)s --model-path models\\sherpa-onnx-sense-voice-funasr-nano-2025-12-17\\model.onnx --input-file videos/ --subtitle-format srt
 
 支持的输入模式:
   实时转录:     --input-source (microphone/system)
@@ -45,29 +44,29 @@ class ConfigManager:
             """
         )
 
-        # 必需参数
-        required = parser.add_argument_group("必需参数")
+        # 运行参数（未传入时使用配置文件中的值）
+        required = parser.add_argument_group("运行参数（可选）")
         required.add_argument(
             "--model-path",
             type=str,
-            required=True,
-            help="sense-voice模型文件路径 (.onnx 或 .bin)"
+            required=False,
+            help="sense-voice模型文件路径 (.onnx 或 .bin，未指定时沿用配置文件)"
         )
 
         # 输入模式 - 互斥组
-        input_group = parser.add_mutually_exclusive_group(required=True)
+        input_group = parser.add_mutually_exclusive_group(required=False)
         input_group.add_argument(
             "--input-source",
             type=str,
             choices=["microphone", "system"],
-            help="实时音频输入源: microphone(麦克风) 或 system(系统音频)"
+            help="实时音频输入源: microphone(麦克风) 或 system(系统音频)，未指定时沿用配置文件"
         )
         input_group.add_argument(
             "--input-file",
             type=str,
             nargs='+',
             metavar="FILE",
-            help="离线文件输入: 单个文件、多个文件或目录路径"
+            help="离线文件输入: 单个文件、多个文件或目录路径，未指定时沿用配置文件"
         )
 
         # 可选参数
@@ -89,6 +88,12 @@ class ConfigManager:
             type=int,
             metavar="INT",
             help="指定音频设备ID (不指定则使用默认设备)"
+        )
+        optional.add_argument(
+            "--transcription-language",
+            type=str,
+            metavar="LANG",
+            help="转录语言提示 (auto/zh/en，默认自动)"
         )
 
         # 音频参数
@@ -245,40 +250,13 @@ class ConfigManager:
         """
         try:
             # 解析参数
-            parsed_args = self.parser.parse_args(args)
+            raw_args = self._resolve_raw_args(args)
+            parsed_args = self.parser.parse_args(raw_args)
+            explicit_options = self._extract_explicit_options(raw_args)
 
-            # 创建配置对象
-            config = Config(
-                model_path=parsed_args.model_path,
-                input_source=parsed_args.input_source,
-                use_gpu=not parsed_args.no_gpu,
-                vad_sensitivity=parsed_args.vad_sensitivity,
-                output_format=parsed_args.output_format,
-                device_id=parsed_args.device_id,
-                sample_rate=parsed_args.sample_rate,
-                chunk_size=parsed_args.chunk_size,
-                vad_window_size=parsed_args.vad_window_size,
-                vad_threshold=parsed_args.vad_threshold,
-                show_confidence=not parsed_args.no_confidence,
-                show_timestamp=not parsed_args.no_timestamp,
-                # 媒体文件转字幕参数
-                input_file=parsed_args.input_file if hasattr(parsed_args, 'input_file') else None,
-                output_dir=parsed_args.output_dir if hasattr(parsed_args, 'output_dir') else None,
-                subtitle_format=parsed_args.subtitle_format if hasattr(parsed_args, 'subtitle_format') else "srt",
-                keep_temp=parsed_args.keep_temp if hasattr(parsed_args, 'keep_temp') else False,
-                verbose=parsed_args.verbose if hasattr(parsed_args, 'verbose') else False,
-                # 字幕显示参数
-                subtitle_display=SubtitleDisplayConfig(
-                    enabled=getattr(parsed_args, 'show_subtitles', True),
-                    position=getattr(parsed_args, 'subtitle_position', 'bottom'),
-                    font_size=getattr(parsed_args, 'subtitle_font_size', 24),
-                    font_family=getattr(parsed_args, 'subtitle_font_family', 'Microsoft YaHei'),
-                    opacity=getattr(parsed_args, 'subtitle_opacity', 0.8),
-                    max_display_time=getattr(parsed_args, 'subtitle_max_display_time', 5.0),
-                    text_color=getattr(parsed_args, 'subtitle_text_color', '#FFFFFF'),
-                    background_color=getattr(parsed_args, 'subtitle_bg_color', '#000000')
-                ),
-            )
+            cli_dict = self._args_to_dict(parsed_args, explicit_options)
+            # CLI 解析路径统一走 v2 构建，确保扁平覆盖键可被兼容映射正确应用
+            config = Config.from_dict_v2(cli_dict)
 
             # 手动验证配置 (因为__post_init__不再自动验证)
             config.validate()
@@ -290,6 +268,137 @@ class ConfigManager:
         except Exception as e:
             self.parser.error(f"参数解析失败: {e}")
 
+    def parse_arguments_to_dict(self, args: Optional[list] = None) -> Dict[str, Any]:
+        """解析命令行参数并转换为字典"""
+        raw_args = self._resolve_raw_args(args)
+        parsed_args = self.parser.parse_args(raw_args)
+        explicit_options = self._extract_explicit_options(raw_args)
+        return self._args_to_dict(parsed_args, explicit_options)
+
+    def parse_cli_overrides(self, args: Optional[list] = None) -> Dict[str, Any]:
+        """解析CLI为覆盖字典（用于ConfigLoader合并）"""
+        raw_args = self._resolve_raw_args(args)
+        parsed_args = self.parser.parse_args(raw_args)
+        explicit_options = self._extract_explicit_options(raw_args)
+        return self._args_to_dict(parsed_args, explicit_options)
+
+    def _resolve_raw_args(self, args: Optional[list]) -> List[str]:
+        """规范化CLI参数列表，None时读取当前进程参数"""
+        if args is None:
+            return list(sys.argv[1:])
+        return list(args)
+
+    def _extract_explicit_options(self, args: List[str]) -> Set[str]:
+        """
+        提取用户显式输入的选项名（如 --vad-threshold）
+
+        说明:
+            - 支持 `--key value` 与 `--key=value` 两种形式
+            - 只记录选项名，不记录值
+        """
+        explicit: Set[str] = set()
+        for token in args:
+            if not isinstance(token, str):
+                continue
+            if not token.startswith("--"):
+                continue
+            explicit.add(token.split("=", 1)[0])
+        return explicit
+
+    def _args_to_dict(
+        self,
+        parsed_args: argparse.Namespace,
+        explicit_options: Optional[Set[str]] = None,
+    ) -> Dict[str, Any]:
+        """将解析后的命令行参数转换为配置字典"""
+        explicit_options = explicit_options or set()
+
+        # 仅显式传参才写入覆盖字典，其余参数沿用 config/gui_config.json
+        cli_dict: Dict[str, Any] = {}
+
+        def is_explicit(flag: str) -> bool:
+            return flag in explicit_options
+
+        # 运行时参数
+        if is_explicit("--model-path"):
+            cli_dict["model_path"] = parsed_args.model_path
+        if is_explicit("--input-source"):
+            cli_dict["input_source"] = parsed_args.input_source
+        if is_explicit("--input-file"):
+            cli_dict["input_file"] = parsed_args.input_file
+        if is_explicit("--no-gpu"):
+            cli_dict["use_gpu"] = not parsed_args.no_gpu
+        if is_explicit("--transcription-language"):
+            cli_dict["transcription_language"] = parsed_args.transcription_language
+
+        # 音频参数
+        if is_explicit("--sample-rate"):
+            cli_dict["sample_rate"] = parsed_args.sample_rate
+        if is_explicit("--chunk-size"):
+            cli_dict["chunk_size"] = parsed_args.chunk_size
+        if is_explicit("--device-id"):
+            cli_dict["device_id"] = parsed_args.device_id
+
+        # VAD 参数（显式覆盖活动方案）
+        if is_explicit("--vad-threshold"):
+            cli_dict["vad_threshold"] = parsed_args.vad_threshold
+        elif is_explicit("--vad-sensitivity"):
+            cli_dict["vad_threshold"] = parsed_args.vad_sensitivity
+        if is_explicit("--vad-window-size"):
+            cli_dict["vad_window_size"] = parsed_args.vad_window_size
+
+        # 输出参数
+        if is_explicit("--output-format"):
+            cli_dict["output_format"] = parsed_args.output_format
+        if is_explicit("--no-confidence"):
+            cli_dict["show_confidence"] = not parsed_args.no_confidence
+        if is_explicit("--no-timestamp"):
+            cli_dict["show_timestamp"] = not parsed_args.no_timestamp
+
+        # 字幕文件参数
+        if is_explicit("--output-dir"):
+            cli_dict["output_dir"] = parsed_args.output_dir
+        if is_explicit("--subtitle-format"):
+            cli_dict["subtitle_format"] = parsed_args.subtitle_format
+        if is_explicit("--keep-temp"):
+            cli_dict["keep_temp"] = parsed_args.keep_temp
+        if is_explicit("--verbose"):
+            cli_dict["verbose"] = parsed_args.verbose
+
+        # 字幕显示参数（部分更新）
+        subtitle_display_updates: Dict[str, Any] = {}
+        if is_explicit("--show-subtitles"):
+            subtitle_display_updates["enabled"] = parsed_args.show_subtitles
+        if is_explicit("--subtitle-position"):
+            subtitle_display_updates["position"] = parsed_args.subtitle_position
+        if is_explicit("--subtitle-font-size"):
+            subtitle_display_updates["font_size"] = parsed_args.subtitle_font_size
+        if is_explicit("--subtitle-font-family"):
+            subtitle_display_updates["font_family"] = parsed_args.subtitle_font_family
+        if is_explicit("--subtitle-opacity"):
+            subtitle_display_updates["opacity"] = parsed_args.subtitle_opacity
+        if is_explicit("--subtitle-max-display-time"):
+            subtitle_display_updates["max_display_time"] = parsed_args.subtitle_max_display_time
+        if is_explicit("--subtitle-text-color"):
+            subtitle_display_updates["text_color"] = parsed_args.subtitle_text_color
+        if is_explicit("--subtitle-bg-color"):
+            subtitle_display_updates["background_color"] = parsed_args.subtitle_bg_color
+        if subtitle_display_updates:
+            cli_dict["subtitle_display"] = subtitle_display_updates
+
+        return self._prune_none(cli_dict)
+
+    def _prune_none(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """移除None值，避免覆盖文件配置"""
+        cleaned: Dict[str, Any] = {}
+        for key, value in data.items():
+            if isinstance(value, dict):
+                nested = self._prune_none(value)
+                if nested:
+                    cleaned[key] = nested
+            elif value is not None:
+                cleaned[key] = value
+        return cleaned
     def get_default_config(self) -> Config:
         """
         获取默认配置
@@ -300,20 +409,7 @@ class ConfigManager:
         Note:
             模型路径需要单独设置，因为没有合理的默认值
         """
-        return Config(
-            model_path="models/sherpa-onnx-sense-voice-funasr-nano-2025-12-17/model.onnx",  # 需要用户指定
-            input_source="microphone",
-            use_gpu=True,
-            vad_sensitivity=0.5,
-            output_format="text",
-            device_id=None,
-            sample_rate=16000,
-            chunk_size=1024,
-            vad_window_size=0.512,
-            vad_threshold=0.5,
-            show_confidence=True,
-            show_timestamp=True,
-        )
+        return Config.create_default()
 
     def validate_config(self, config: Config) -> bool:
         """

@@ -346,8 +346,8 @@ class SherpaOnnxVAD:
                 # 获取检测结果
                 segment = self._vad_model.front
                 # 判断是否为语音段
-                is_speech = len(segment.samples) > 0
-                real_data = self._vad_model.front.samples
+                real_data = np.asarray(segment.samples, dtype=np.float32)
+                is_speech = len(real_data) > 0
                 self._vad_model.pop()  # 移除已处理的段
                 # 尝试获取更准确的置信度
                 confidence = self._get_confidence_score(is_speech)
@@ -365,14 +365,26 @@ class SherpaOnnxVAD:
                 # 对 TRANSITION_TO_SPEECH 阶段，优先保留 _update_state() 产出的前置缓冲音频，
                 # 避免被 real_data 覆盖后再次出现“首字被截断”的问题。
                 has_buffered_audio = result.audio_data is not None and len(result.audio_data) > 0
-                if result.state == VadState.TRANSITION_TO_SPEECH and has_buffered_audio:
-                    logger.debug(
-                        "SherpaOnnxVAD 保留语音起始缓冲音频: buffered=%s, raw_segment=%s",
-                        len(result.audio_data),
-                        len(real_data) if real_data is not None else 0,
-                    )
-                elif real_data is not None and len(real_data) > 0:
-                    result.audio_data = real_data
+                if real_data is not None and len(real_data) > 0:
+                    if result.state == VadState.TRANSITION_TO_SPEECH and has_buffered_audio:
+                        # 当 sherpa-onnx 已经给出完整分段时，优先使用更长的完整分段，
+                        # 避免“暂停后仅保留最后短片段”的问题。
+                        buffered_len = len(result.audio_data)
+                        if len(real_data) > buffered_len:
+                            result.audio_data = real_data
+                            logger.debug(
+                                "SherpaOnnxVAD 检测到完整语音段，使用完整分段覆盖缓冲: buffered=%s, raw_segment=%s",
+                                buffered_len,
+                                len(real_data),
+                            )
+                        else:
+                            logger.debug(
+                                "SherpaOnnxVAD 保留语音起始缓冲音频: buffered=%s, raw_segment=%s",
+                                len(result.audio_data),
+                                len(real_data),
+                            )
+                    else:
+                        result.audio_data = real_data
             else:
                 self._statistics.update_silence_duration(duration_ms)
 

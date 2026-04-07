@@ -2,6 +2,19 @@
 # Speech2Subtitles 实时语音转录系统
 
 ## 变更日志 (Changelog)
+- **2026-04-07**: 配置体系统一（schema v2）
+  - **功能**: 引入 AppConfig 分区结构，统一配置加载优先级（CLI > ENV > 文件 > 默认）
+  - **数据模型**:
+    - 新增 `AppConfig` 分区结构（runtime/audio/vad/model/transcription/output/subtitle）
+    - `Config` 保留为兼容入口，支持旧字段构造
+  - **加载链路**:
+    - 新增 `ConfigLoader` 合并多源配置
+    - 配置文件升级为 `version=2.0` 并自动迁移旧格式
+  - **流水线**: 转录语言优先级改为配置驱动，移除 env 直读
+  - **影响文件**:
+    - `src/config/models.py`, `src/config/loader.py`, `src/config/manager.py`, `src/config/file_manager.py`
+    - `src/gui/bridges/config_bridge.py`
+    - `main.py`, `src/coordinator/pipeline.py`
 - **2025-11-15**: 主界面VAD方案同步修复 (Critical)
   - **问题**: 用户在设置对话框修改VAD方案名称后，主界面高级设置面板中的VAD下拉框未同步更新
   - **根因**: `main_window.py::_on_settings_changed()`方法只更新了模型方案下拉框，遗漏了VAD方案下拉框更新
