@@ -238,6 +238,8 @@ class TranscriptionEngine:
                 self._load_sherpa_offline_model()
             elif self.config.model == TranscriptionModel.SENSE_VOICE:
                 self._load_sense_voice_model()
+            elif self.config.model == TranscriptionModel.QWEN_ARS:
+                self._load_qwen_ars_model()
             else:
                 raise UnsupportedModelError(f"Unsupported model type: {self.config.model}")
 
@@ -372,7 +374,7 @@ class TranscriptionEngine:
             self._recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                 model=self.config.model_path,
                 tokens=os.path.join(os.path.dirname(self.config.model_path), "tokens.txt"),
-                num_threads=2,
+                num_threads= self.config.num_threads,
                 use_itn=True,
                 debug=False,
                 provider='cuda' if self.config.use_gpu else 'cpu',
@@ -389,6 +391,52 @@ class TranscriptionEngine:
                 logger.warning(f"sherpa-onnx模型加载失败，使用基础实现: {e}")
             else:
                 raise ModelLoadError(f"加载sense-voice模型失败: {e}")
+
+    def _load_qwen_ars_model(self) -> None:
+        """Load Qwen-ARS model - enhanced implementation with fallback"""
+        try:
+            logger.info(f"正在加载Qwen-ARS模型: {self.config.model_path}")
+
+            # 检查模型文件是否存在
+            if not os.path.exists(self.config.model_path):
+                raise ModelLoadError(f"模型文件不存在: {self.config.model_path}")
+            # 通过关键词encoder, decoder查找正确的模型
+            # 查找encoder的onnx模型
+            encoder_path = ""
+            decoder_path = ""
+            for file in os.listdir(self.config.model_path):
+                if "encoder" in file and file.endswith(".onnx"):
+                    encoder_path = self.config.model_path + "/" + file
+                elif "decoder" in file and file.endswith(".onnx"):
+                    decoder_path = self.config.model_path + "/" + file
+            if not encoder_path or not decoder_path:
+                raise ModelLoadError("未找到Qwen-ARS模型的encoder或decoder文件")
+            # 创建Qwen-ARS识别器
+            self._recognizer = sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
+                conv_frontend = self.config.model_path + "/conv_frontend.onnx",
+                encoder = encoder_path,
+                decoder = decoder_path,
+                tokenizer = self.config.model_path + "/tokenizer",
+                hotwords = self.config.hotwords,
+                num_threads = self.config.num_threads,
+                sample_rate = self.config.sample_rate,
+                feature_dim = self.config.feature_dim,
+                provider = 'cuda' if self.config.use_gpu else 'cpu',
+                debug = False,
+                max_total_len = self.config.max_total_len,
+                max_new_tokens = self.config.max_new_tokens,
+                temperature = self.config.temperature,
+                top_p = self.config.top_p,
+                seed = self.config.seed,
+            )
+
+            logger.info("Qwen-ARS模型加载成功")
+
+        except Exception as e:
+            if "sherpa_onnx" in str(e) or "not found" in str(e).lower():
+                logger.warning(f"sherpa-onnx模型加载失败，使用基础实现: {e}")
+            else:
+                raise ModelLoadError(f"加载Qwen-ARS模型失败: {e}")
 
     def transcribe_audio(self, audio_data: np.ndarray, return_partial: bool = False) -> TranscriptionResult:
         """

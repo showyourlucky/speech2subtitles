@@ -28,8 +28,17 @@ from PySide6.QtGui import QIcon, QColor, QFont, QFontDatabase
 
 from src.config.models import Config, SubtitleDisplayConfig
 from src.gui.bridges.config_bridge import ConfigBridge
+from src.transcription.models import TranscriptionModel
 
 logger = logging.getLogger(__name__)
+
+# 模型类型选项：键为显示文本，值为 TranscriptionModel 的 value
+MODEL_TYPE_OPTIONS = {
+    "SenseVoice": TranscriptionModel.SENSE_VOICE.value,
+    "Sherpa Onnx Streaming": TranscriptionModel.SHERPA_ONNX_STREAMING.value,
+    "Sherpa Onnx Offline": TranscriptionModel.SHERPA_ONNX_OFFLINE.value,
+    "Qwen ARS": TranscriptionModel.QWEN_ARS.value,
+}
 
 
 class SettingsDialog(QDialog):
@@ -483,6 +492,72 @@ class SettingsDialog(QDialog):
         model_path_layout.addWidget(browse_button)
         right_layout.addRow("模型路径:", model_path_layout)
         self.config_widgets['model_profile_path'] = model_path_edit
+
+        # 模型类型
+        model_type_combo = QComboBox()
+        model_type_combo.addItems(list(MODEL_TYPE_OPTIONS.keys()))
+        right_layout.addRow("模型类型:", model_type_combo)
+        self.config_widgets['model_profile_type'] = model_type_combo
+        model_type_combo.currentTextChanged.connect(self._on_model_type_changed)
+
+        # Qwen ARS参数（仅在模型类型为QWEN_ARS时显示）
+        qwen_ars_group = QGroupBox("Qwen ARS 参数")
+        qwen_ars_layout = QFormLayout(qwen_ars_group)
+
+        qwen_hotwords_edit = QLineEdit()
+        qwen_hotwords_edit.setPlaceholderText("可选: 逗号分隔热词，例如 你好,字幕")
+        qwen_ars_layout.addRow("热词(hotwords):", qwen_hotwords_edit)
+        self.config_widgets['model_profile_qwen_hotwords'] = qwen_hotwords_edit
+
+        qwen_num_threads_spinbox = QSpinBox()
+        qwen_num_threads_spinbox.setRange(1, 64)
+        qwen_num_threads_spinbox.setValue(2)
+        qwen_ars_layout.addRow("线程数(num_threads):", qwen_num_threads_spinbox)
+        self.config_widgets['model_profile_qwen_num_threads'] = qwen_num_threads_spinbox
+
+        qwen_feature_dim_spinbox = QSpinBox()
+        qwen_feature_dim_spinbox.setRange(1, 4096)
+        qwen_feature_dim_spinbox.setValue(128)
+        qwen_ars_layout.addRow("特征维度(feature_dim):", qwen_feature_dim_spinbox)
+        self.config_widgets['model_profile_qwen_feature_dim'] = qwen_feature_dim_spinbox
+
+        qwen_max_total_len_spinbox = QSpinBox()
+        qwen_max_total_len_spinbox.setRange(1, 32768)
+        qwen_max_total_len_spinbox.setValue(512)
+        qwen_ars_layout.addRow("最大总长度(max_total_len):", qwen_max_total_len_spinbox)
+        self.config_widgets['model_profile_qwen_max_total_len'] = qwen_max_total_len_spinbox
+
+        qwen_max_new_tokens_spinbox = QSpinBox()
+        qwen_max_new_tokens_spinbox.setRange(1, 32768)
+        qwen_max_new_tokens_spinbox.setValue(128)
+        qwen_ars_layout.addRow("最大新Token(max_new_tokens):", qwen_max_new_tokens_spinbox)
+        self.config_widgets['model_profile_qwen_max_new_tokens'] = qwen_max_new_tokens_spinbox
+
+        qwen_temperature_spinbox = QDoubleSpinBox()
+        qwen_temperature_spinbox.setRange(0.01, 10.0)
+        qwen_temperature_spinbox.setSingleStep(0.01)
+        qwen_temperature_spinbox.setDecimals(2)
+        qwen_temperature_spinbox.setValue(1.0)
+        qwen_ars_layout.addRow("温度(temperature):", qwen_temperature_spinbox)
+        self.config_widgets['model_profile_qwen_temperature'] = qwen_temperature_spinbox
+
+        qwen_top_p_spinbox = QDoubleSpinBox()
+        qwen_top_p_spinbox.setRange(0.01, 1.0)
+        qwen_top_p_spinbox.setSingleStep(0.01)
+        qwen_top_p_spinbox.setDecimals(2)
+        qwen_top_p_spinbox.setValue(0.8)
+        qwen_ars_layout.addRow("Top-p(top_p):", qwen_top_p_spinbox)
+        self.config_widgets['model_profile_qwen_top_p'] = qwen_top_p_spinbox
+
+        qwen_seed_spinbox = QSpinBox()
+        qwen_seed_spinbox.setRange(0, 2147483647)
+        qwen_seed_spinbox.setValue(48)
+        qwen_ars_layout.addRow("随机种子(seed):", qwen_seed_spinbox)
+        self.config_widgets['model_profile_qwen_seed'] = qwen_seed_spinbox
+
+        right_layout.addRow(qwen_ars_group)
+        self.config_widgets['model_profile_qwen_group'] = qwen_ars_group
+        self._update_qwen_ars_params_visibility(TranscriptionModel.SENSE_VOICE.value)
 
         # 描述
         description_edit = QLineEdit()
@@ -976,6 +1051,30 @@ class SettingsDialog(QDialog):
             else:
                 profile.supported_languages = None
 
+        # 更新模型类型
+        if 'model_profile_type' in self.config_widgets:
+            selected_text = self.config_widgets['model_profile_type'].currentText()
+            profile.model_type = MODEL_TYPE_OPTIONS.get(selected_text, TranscriptionModel.SENSE_VOICE.value)
+            self._update_qwen_ars_params_visibility(profile.model_type)
+
+        # 更新Qwen ARS参数
+        if 'model_profile_qwen_hotwords' in self.config_widgets:
+            profile.hotwords = self.config_widgets['model_profile_qwen_hotwords'].text().strip()
+        if 'model_profile_qwen_num_threads' in self.config_widgets:
+            profile.num_threads = self.config_widgets['model_profile_qwen_num_threads'].value()
+        if 'model_profile_qwen_feature_dim' in self.config_widgets:
+            profile.feature_dim = self.config_widgets['model_profile_qwen_feature_dim'].value()
+        if 'model_profile_qwen_max_total_len' in self.config_widgets:
+            profile.max_total_len = self.config_widgets['model_profile_qwen_max_total_len'].value()
+        if 'model_profile_qwen_max_new_tokens' in self.config_widgets:
+            profile.max_new_tokens = self.config_widgets['model_profile_qwen_max_new_tokens'].value()
+        if 'model_profile_qwen_temperature' in self.config_widgets:
+            profile.temperature = self.config_widgets['model_profile_qwen_temperature'].value()
+        if 'model_profile_qwen_top_p' in self.config_widgets:
+            profile.top_p = self.config_widgets['model_profile_qwen_top_p'].value()
+        if 'model_profile_qwen_seed' in self.config_widgets:
+            profile.seed = self.config_widgets['model_profile_qwen_seed'].value()
+
         # 更新时间戳
         from datetime import datetime
         profile.updated_at = datetime.now()
@@ -1351,8 +1450,47 @@ class SettingsDialog(QDialog):
             # 将语言列表转换为逗号分隔的字符串
             languages_str = ",".join(profile.supported_languages) if profile.supported_languages else ""
             self.config_widgets['model_profile_languages'].setText(languages_str)
+        if 'model_profile_type' in self.config_widgets:
+            current_model_type = profile.model_type or TranscriptionModel.SENSE_VOICE.value
+            selected_label = "SenseVoice"
+            for label, value in MODEL_TYPE_OPTIONS.items():
+                if value == current_model_type:
+                    selected_label = label
+                    break
+            self.config_widgets['model_profile_type'].setCurrentText(selected_label)
+            self._update_qwen_ars_params_visibility(current_model_type)
+
+        if 'model_profile_qwen_hotwords' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_hotwords'].setText(getattr(profile, 'hotwords', ""))
+        if 'model_profile_qwen_num_threads' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_num_threads'].setValue(int(getattr(profile, 'num_threads', 2)))
+        if 'model_profile_qwen_feature_dim' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_feature_dim'].setValue(int(getattr(profile, 'feature_dim', 128)))
+        if 'model_profile_qwen_max_total_len' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_max_total_len'].setValue(int(getattr(profile, 'max_total_len', 512)))
+        if 'model_profile_qwen_max_new_tokens' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_max_new_tokens'].setValue(int(getattr(profile, 'max_new_tokens', 128)))
+        if 'model_profile_qwen_temperature' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_temperature'].setValue(float(getattr(profile, 'temperature', 1.0)))
+        if 'model_profile_qwen_top_p' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_top_p'].setValue(float(getattr(profile, 'top_p', 0.8)))
+        if 'model_profile_qwen_seed' in self.config_widgets:
+            self.config_widgets['model_profile_qwen_seed'].setValue(int(getattr(profile, 'seed', 48)))
 
         logger.debug(f"Model profile selected: {profile_id}")
+
+    @Slot(str)
+    def _on_model_type_changed(self, model_label: str) -> None:
+        """模型类型切换时更新Qwen ARS参数可见性"""
+        model_type = MODEL_TYPE_OPTIONS.get(model_label, TranscriptionModel.SENSE_VOICE.value)
+        self._update_qwen_ars_params_visibility(model_type)
+
+    def _update_qwen_ars_params_visibility(self, model_type: str) -> None:
+        """根据模型类型显示/隐藏Qwen ARS参数区域"""
+        group = self.config_widgets.get('model_profile_qwen_group')
+        if group is None:
+            return
+        group.setVisible(model_type == TranscriptionModel.QWEN_ARS.value)
 
     @Slot()
     def _on_add_model_profile(self) -> None:
@@ -1412,6 +1550,7 @@ class SettingsDialog(QDialog):
             profile_id=f"model_{uuid.uuid4().hex[:8]}",
             profile_name=profile_name,
             model_path=model_path,
+            model_type=TranscriptionModel.SENSE_VOICE.value,
             description="",
             supported_languages=None
         )
@@ -1527,6 +1666,15 @@ class SettingsDialog(QDialog):
             profile_id=f"model_{uuid.uuid4().hex[:8]}",
             profile_name=new_name,
             model_path=source_profile.model_path,
+            model_type=source_profile.model_type,
+            hotwords=source_profile.hotwords,
+            num_threads=source_profile.num_threads,
+            feature_dim=source_profile.feature_dim,
+            max_total_len=source_profile.max_total_len,
+            max_new_tokens=source_profile.max_new_tokens,
+            temperature=source_profile.temperature,
+            top_p=source_profile.top_p,
+            seed=source_profile.seed,
             description=source_profile.description,
             supported_languages=source_profile.supported_languages.copy() if source_profile.supported_languages else None,
             created_at=datetime.now(),
@@ -1556,71 +1704,36 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def _on_validate_model_file(self) -> None:
-        """验证模型文件"""
+        """验证模型路径是否存在"""
         if 'model_profile_path' not in self.config_widgets:
             return
 
         model_path = self.config_widgets['model_profile_path'].text().strip()
 
         if not model_path:
-            QMessageBox.warning(self, "验证失败", "请先输入模型文件路径")
+            QMessageBox.warning(self, "验证失败", "请先输入模型路径")
             return
 
-        # 验证模型文件
+        # 仅验证路径是否存在（支持文件或目录）
         from pathlib import Path
-        import os
 
         try:
             path = Path(model_path)
 
-            # 检查文件存在
+            # 检查路径存在
             if not path.exists():
-                QMessageBox.warning(self, "验证失败", f"文件不存在:\n{model_path}")
-                return
-
-            # 检查是文件而非目录
-            if not path.is_file():
-                QMessageBox.warning(self, "验证失败", f"路径不是文件:\n{model_path}")
-                return
-
-            # 检查文件扩展名
-            from src.config.models import ModelConstants
-            if path.suffix.lower() not in ModelConstants.SUPPORTED_EXTENSIONS:
-                QMessageBox.warning(
-                    self,
-                    "验证失败",
-                    f"不支持的文件格式: {path.suffix}\n"
-                    f"支持的格式: {', '.join(ModelConstants.SUPPORTED_EXTENSIONS)}"
-                )
-                return
-
-            # 检查文件大小
-            file_size_mb = path.stat().st_size / (1024 * 1024)
-            if file_size_mb < 1:
-                QMessageBox.warning(
-                    self,
-                    "验证失败",
-                    f"文件过小 ({file_size_mb:.2f}MB)\n"
-                    f"可能不是有效的模型文件"
-                )
-                return
-
-            # 检查文件权限
-            if not os.access(path, os.R_OK):
-                QMessageBox.warning(self, "验证失败", f"没有读取权限:\n{model_path}")
+                QMessageBox.warning(self, "验证失败", f"路径不存在:\n{model_path}")
                 return
 
             # 验证通过
             QMessageBox.information(
                 self,
                 "验证成功",
-                f"模型文件验证通过!\n\n"
-                f"路径: {model_path}\n"
-                f"格式: {path.suffix}\n"
-                f"大小: {file_size_mb:.2f}MB"
+                f"模型路径验证通过!\n\n"
+                f"路径: {model_path}"
             )
 
-            logger.info(f"Model file validated: {model_path}")
+            logger.info(f"Model path validated: {model_path}")
 
         except Exception as e:
             QMessageBox.critical(

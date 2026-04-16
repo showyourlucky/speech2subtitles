@@ -83,7 +83,6 @@ test_vad_fixes.py
 models/*
 
 # 配置文件（用户特定的配置不提交）
-config/*.json
 !config/.gitkeep
 
 # GUI历史记录数据库
@@ -94,3 +93,9 @@ config/*.json
 .codex/*
 models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
 openspec/*
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.aac
+*.srt

@@ -228,18 +228,23 @@ class AdvancedSettingsPanel(QGroupBox):
             profiles: 模型方案字典 {profile_id: ModelProfile}
             current_profile_id: 当前选中的方案ID
         """
-        self.model_combo.clear()
+        # 阻塞信号，避免初始化/更新时触发 model_changed 导致弹框
+        self.model_combo.blockSignals(True)
+        try:
+            self.model_combo.clear()
 
-        # 添加所有模型方案
-        for profile_id, profile in profiles.items():
-            self.model_combo.addItem(profile.profile_name, profile_id)
+            # 添加所有模型方案
+            for profile_id, profile in profiles.items():
+                self.model_combo.addItem(profile.profile_name, profile_id)
 
-        # 选中当前活跃方案
-        if current_profile_id:
-            for i in range(self.model_combo.count()):
-                if self.model_combo.itemData(i) == current_profile_id:
-                    self.model_combo.setCurrentIndex(i)
-                    break
+            # 选中当前活跃方案
+            if current_profile_id:
+                for i in range(self.model_combo.count()):
+                    if self.model_combo.itemData(i) == current_profile_id:
+                        self.model_combo.setCurrentIndex(i)
+                        break
+        finally:
+            self.model_combo.blockSignals(False)
 
         logger.debug(f"Model profiles updated, count: {len(profiles)}, current: {current_profile_id}")
 

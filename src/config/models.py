@@ -43,6 +43,12 @@ class ModelConstants:
     """模型相关常量"""
     SUPPORTED_EXTENSIONS: List[str] = ['.onnx', '.bin']
     SUPPORTED_INPUT_SOURCES: List[str] = ["microphone", "system"]  # 实时音频输入源
+    SUPPORTED_TRANSCRIPTION_MODEL_TYPES: List[str] = [
+        "sense_voice",
+        "sherpa_onnx_streaming",
+        "sherpa_onnx_offline",
+        "qwen_ars",
+    ]
 
 
 class OutputConstants:
@@ -202,6 +208,17 @@ class ModelProfile:
 
     # 模型路径(必需)
     model_path: str = ""                                                              # 模型文件路径
+    model_type: str = "sense_voice"                                                   # 转录模型类型
+
+    # qwen3-ars参数（仅在 model_type=QWEN_ARS 时生效）
+    hotwords: str = ""                                                                # 热词（逗号分隔）
+    num_threads: int = 2                                                              # 推理线程数
+    feature_dim: int = 128                                                            # 特征维度
+    max_total_len: int = 512                                                          # 最大总长度
+    max_new_tokens: int = 128                                                         # 最大新生成token
+    temperature: float = 1.0                                                          # 采样温度
+    top_p: float = 0.8                                                                # top-p采样
+    seed: int = 48                                                                    # 随机种子
 
     # 可选元数据
     description: Optional[str] = None                                                 # 模型描述信息
@@ -222,26 +239,35 @@ class ModelProfile:
         if not self.profile_name or not self.profile_name.strip():
             raise ValueError("模型方案名称不能为空")
 
-        # 验证模型路径
+        # 仅校验模型路径是否存在（支持文件或目录）
         if not self.model_path or not self.model_path.strip():
-            raise ValueError("模型文件路径不能为空")
+            raise ValueError("模型路径不能为空")
 
         model_path = Path(self.model_path)
         if not model_path.exists():
-            raise ValueError(f"模型文件不存在: {self.model_path}")
+            raise ValueError(f"模型路径不存在: {self.model_path}")
 
-        if not model_path.is_file():
-            raise ValueError(f"模型路径不是文件: {self.model_path}")
-
-        if model_path.suffix.lower() not in ModelConstants.SUPPORTED_EXTENSIONS:
+        # 验证模型类型
+        if self.model_type.lower() not in [item.lower() for item in ModelConstants.SUPPORTED_TRANSCRIPTION_MODEL_TYPES]:
             raise ValueError(
-                f"不支持的模型文件格式: {model_path.suffix}, "
-                f"支持的格式: {ModelConstants.SUPPORTED_EXTENSIONS}"
+                f"不支持的转录模型类型: {self.model_type}, "
+                f"支持: {ModelConstants.SUPPORTED_TRANSCRIPTION_MODEL_TYPES}"
             )
 
-        # 验证文件权限
-        if not os.access(model_path, os.R_OK):
-            raise ValueError(f"没有读取权限: {self.model_path}")
+        # 仅在Qwen ARS时校验专属参数
+        if self.model_type == "qwen_ars":
+            if self.num_threads <= 0:
+                raise ValueError(f"num_threads必须大于0: {self.num_threads}")
+            if self.feature_dim <= 0:
+                raise ValueError(f"feature_dim必须大于0: {self.feature_dim}")
+            if self.max_total_len <= 0:
+                raise ValueError(f"max_total_len必须大于0: {self.max_total_len}")
+            if self.max_new_tokens <= 0:
+                raise ValueError(f"max_new_tokens必须大于0: {self.max_new_tokens}")
+            if not (0.0 < self.top_p <= 1.0):
+                raise ValueError(f"top_p必须在(0,1]区间: {self.top_p}")
+            if self.temperature <= 0:
+                raise ValueError(f"temperature必须大于0: {self.temperature}")
 
     @staticmethod
     def create_default_profile(model_path: str = "") -> 'ModelProfile':
@@ -258,6 +284,7 @@ class ModelProfile:
             profile_id="default",
             profile_name="默认",
             model_path=model_path,
+            model_type="sense_voice",
             description="系统默认模型配置",
             supported_languages=["zh", "en", "ja", "ko", "yue"]
         )
@@ -269,15 +296,31 @@ class ModelProfile:
         Returns:
             Dict[str, Any]: 字典形式的配置数据
         """
-        return {
+        data = {
             "profile_id": self.profile_id,
             "profile_name": self.profile_name,
             "model_path": self.model_path,
+            "model_type": self.model_type,
             "description": self.description,
             "supported_languages": self.supported_languages,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat()
         }
+
+        # 仅在QWEN_ARS时序列化专属参数，避免污染其它模型配置
+        if self.model_type == "qwen_ars":
+            data.update({
+                "hotwords": self.hotwords,
+                "num_threads": self.num_threads,
+                "feature_dim": self.feature_dim,
+                "max_total_len": self.max_total_len,
+                "max_new_tokens": self.max_new_tokens,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "seed": self.seed,
+            })
+
+        return data
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> 'ModelProfile':
@@ -294,6 +337,15 @@ class ModelProfile:
             profile_id=data.get("profile_id", f"model_{uuid.uuid4().hex[:8]}"),
             profile_name=data.get("profile_name", "未命名模型"),
             model_path=data.get("model_path", ""),
+            model_type=data.get("model_type", "sense_voice"),
+            hotwords=data.get("hotwords", ""),
+            num_threads=data.get("num_threads", 2),
+            feature_dim=data.get("feature_dim", 128),
+            max_total_len=data.get("max_total_len", 512),
+            max_new_tokens=data.get("max_new_tokens", 128),
+            temperature=data.get("temperature", 1.0),
+            top_p=data.get("top_p", 0.8),
+            seed=data.get("seed", 48),
             description=data.get("description"),
             supported_languages=data.get("supported_languages"),
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
@@ -686,11 +738,52 @@ class Config:
             self.model_profiles = {"default": ModelProfile.create_default_profile("")}
             self.active_model_profile_id = "default"
 
+    def _normalize_input_source(self) -> Optional[str]:
+        """归一化 input_source，统一空白字符串为 None。"""
+        input_source = self.input_source
+        if input_source is None:
+            return None
+        if not isinstance(input_source, str):
+            raise ValueError("input_source 必须是字符串或 None")
+
+        normalized_source = input_source.strip()
+        return normalized_source or None
+
+    def _normalize_input_file(self) -> Optional[List[str]]:
+        """归一化 input_file，统一输出为非空字符串列表或 None。"""
+        input_file = self.input_file
+        if input_file is None:
+            return None
+
+        # 兼容单文件字符串输入
+        if isinstance(input_file, str):
+            stripped_file = input_file.strip()
+            return [stripped_file] if stripped_file else None
+
+        if not isinstance(input_file, list):
+            raise ValueError("input_file 必须是字符串、字符串列表或 None")
+
+        cleaned_files: List[str] = []
+        for file_path in input_file:
+            if not isinstance(file_path, str):
+                raise ValueError("input_file 必须是字符串列表")
+            stripped_file = file_path.strip()
+            if stripped_file:
+                cleaned_files.append(stripped_file)
+        return cleaned_files or None
+
     def validate(self) -> None:
         """验证配置的有效性"""
+        # 先归一化输入参数，减少后续校验分支复杂度
+        self.input_source = self._normalize_input_source()
+        self.input_file = self._normalize_input_file()
+
+        has_input_source = self.input_source is not None
+        has_input_file = self.input_file is not None
+
         # 验证输入模式: --input-source {microphone,system} | --input-file FILE
         # 规则1: 必须提供其中之一
-        if self.input_source is None and self.input_file is None:
+        if not has_input_source and not has_input_file:
             raise ValueError(
                 "必须提供以下参数之一：\n"
                 "  - 实时模式: --input-source {microphone,system}\n"
@@ -698,7 +791,7 @@ class Config:
             )
 
         # 规则2: 两者互斥，不能同时提供
-        if self.input_source is not None and self.input_file is not None:
+        if has_input_source and has_input_file:
             raise ValueError(
                 "参数冲突：--input-source 和 --input-file 互斥，请只提供其中之一\n"
                 "  - 实时转录: 使用 --input-source {microphone,system}\n"
@@ -715,9 +808,6 @@ class Config:
 
         # 验证离线文件输入
         if self.input_file is not None:
-            if not isinstance(self.input_file, list):
-                self.input_file = [self.input_file]
-
             for file_path in self.input_file:
                 path = Path(file_path)
                 if not path.exists():
@@ -794,7 +884,7 @@ class Config:
         """创建默认配置"""
         config = Config()
         config.model_path = "models/sherpa-onnx-sense-voice-funasr-nano-2025-12-17/model.onnx"
-        config.input_source = "microphone"
+        config.input_source = ""
         return config
 
     def to_dict_v2(self) -> Dict[str, Any]:

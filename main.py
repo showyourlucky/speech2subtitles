@@ -28,6 +28,7 @@ from src.config.manager import ConfigManager
 from src.config.loader import ConfigLoader
 from src.coordinator.pipeline import TranscriptionPipeline, PipelineState
 from src.coordinator.pipeline import EventType, PipelineEvent
+from src.transcription.config_factory import build_transcription_config
 
 
 def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> None:
@@ -310,29 +311,16 @@ def run_file_transcription(config):
 
     # 步骤3: 初始化转录引擎和VAD
     from src.transcription.engine_manager import TranscriptionEngineManager  # 使用转录引擎管理器
-    from src.transcription.models import TranscriptionConfig, TranscriptionModel, LanguageCode
     from src.vad import VadManager  # 使用 VAD 管理器
     from src.vad.models import VadConfig, VadModel
 
     print("\n[初始化] 加载转录引擎...")
 
     # 创建转录引擎配置
-    language_hint = None
-    if getattr(config, "transcription_language", None):
-        raw_language = str(config.transcription_language).strip().lower()
-        if raw_language in {"zh", "zh-cn", "chinese", "cn"}:
-            language_hint = LanguageCode.CHINESE
-        elif raw_language in {"en", "en-us", "english"}:
-            language_hint = LanguageCode.ENGLISH
-        elif raw_language in {"auto", "自动"}:
-            language_hint = LanguageCode.AUTO
-
-    transcription_config = TranscriptionConfig(
-        model=TranscriptionModel.SENSE_VOICE,
-        model_path=config.model_path,
-        language=language_hint or LanguageCode.AUTO,
-        sample_rate=config.sample_rate,
-        use_gpu=config.use_gpu
+    transcription_config = build_transcription_config(
+        config,
+        on_warning=print,
+        on_info=print,
     )
 
     # 初始化转录引擎（使用 TranscriptionEngineManager 实现智能复用）

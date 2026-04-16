@@ -33,12 +33,7 @@ from src.media.batch_processor import BatchProcessor, BatchProcessorCancelled
 from src.media.converter import MediaConverter
 from src.media.subtitle_generator import SubtitleGenerator, Segment
 from src.transcription.engine_manager import TranscriptionEngineManager
-from src.transcription.models import (
-    TranscriptionConfig,
-    TranscriptionModel,
-    LanguageCode,
-    ProcessorType,
-)
+from src.transcription.config_factory import build_transcription_config
 from src.vad import VadManager
 from src.vad.models import VadConfig, VadModel
 
@@ -102,15 +97,9 @@ class TranscriptionWorker(QThread):
             vad_detector = VadManager.get_detector(vad_config)
 
             # 2. 创建转录引擎配置对象
-            transcription_config = TranscriptionConfig(
-                model=TranscriptionModel.SENSE_VOICE,  # 使用sense-voice模型
-                model_path=self.config.model_path,  # 模型路径
-                language=LanguageCode.AUTO,  # 自动语言检测
-                processor_type=ProcessorType.GPU
-                if self.config.use_gpu
-                else ProcessorType.CPU,
-                sample_rate=self.config.sample_rate,  # 采样率
-                use_gpu=self.config.use_gpu,  # GPU加速
+            transcription_config = build_transcription_config(
+                self.config,
+                on_warning=logger.warning,
             )
             transcription_engine = TranscriptionEngineManager.get_engine(
                 transcription_config

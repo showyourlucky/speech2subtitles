@@ -66,7 +66,7 @@ def basic_vad_example():
         # 4. 准备测试音频
         print("\n准备测试音频...")
         
-        audio_file = "L:/声音/VoxCPM/workspace/飘飘欲仙1188狼太郎www.xitxt.net/line_005.wav"
+        audio_file = "L:/voice/VoxCPM/workspace/飘飘欲仙1188狼太郎www.xitxt.net/line_005.wav"
         # 5. 加载音频
         print(f"加载音频文件: {audio_file}")
         samples, sample_rate = load_audio(audio_file)

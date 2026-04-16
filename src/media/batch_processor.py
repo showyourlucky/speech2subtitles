@@ -3,16 +3,17 @@
 
 负责批量处理媒体文件,协调转换、转录和字幕生成流程
 """
-
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
 import logging
-import time
 import threading
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 
 from .converter import MediaConverter
-from .subtitle_generator import SubtitleGenerator, Segment
+from .subtitle_generator import Segment, SubtitleGenerator
 
 # 回调函数类型定义
 OnFileStart = Callable[[int, int, str], None]  # (file_index, total_files, filename)
@@ -98,16 +99,16 @@ class BatchProcessor:
         file_path: Path,
         transcription_engine,
         vad_detector,
-        output_dir: Optional[Path] = None,
+        output_dir: Path | None = None,
         subtitle_format: str = "srt",
         keep_temp: bool = False,
         verbose: bool = False,
         # 新增: 回调参数用于GUI进度显示
-        on_progress: Optional[OnFileProgress] = None,
-        on_segment: Optional[OnSegment] = None,
-        cancel_event: Optional[threading.Event] = None,
+        on_progress: OnFileProgress | None = None,
+        on_segment: OnSegment | None = None,
+        cancel_event: threading.Event | None = None,
         file_index: int = 0,  # 文件索引,用于进度回调
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         处理单个媒体文件
 
@@ -292,10 +293,10 @@ class BatchProcessor:
         vad_detector,
         sample_rate: int = 16000,
         verbose: bool = False,
-        on_segment: Optional[OnSegment] = None,
-        on_progress: Optional[Callable[[float], None]] = None,
-        cancel_event: Optional[threading.Event] = None,
-    ) -> List[Segment]:
+        on_segment: OnSegment | None = None,
+        on_progress: Callable[[float], None] | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> list[Segment]:
         """
         转录音频文件并生成字幕片段
 
@@ -322,8 +323,8 @@ class BatchProcessor:
             此方法使用VadManager管理的VAD检测器的底层sherpa-onnx模型,
             以支持批量处理所需的特殊API (buffer_size_in_seconds=100)
         """
-        import soundfile as sf
         import sherpa_onnx
+        import soundfile as sf
 
         # 检查取消事件
         if cancel_event and cancel_event.is_set():
@@ -483,22 +484,28 @@ class BatchProcessor:
         # 检查取消事件
         if cancel_event and cancel_event.is_set():
             raise BatchProcessorCancelled("用户取消处理")
-
+        # 开始时间
+        start_time = time.time()
         # 批量解码所有语音段 (提升性能)
         total_streams = len(streams)
-        for idx, stream in enumerate(streams):
-            # 检查取消事件
-            if cancel_event and cancel_event.is_set():
-                raise BatchProcessorCancelled("用户取消处理")
+        # for idx, stream in enumerate(streams):
+        #     # 检查取消事件
+        #     if cancel_event and cancel_event.is_set():
+        #         raise BatchProcessorCancelled("用户取消处理")
 
-            recognizer.decode_stream(stream)
+        #     recognizer.decode_stream(stream)
 
-            # 更新进度 (转录占60%)
-            if on_progress and total_streams > 0:
-                progress = 30.0 + ((idx + 1) / total_streams) * 60.0
-                on_progress(progress)
+        #     # 更新进度 (转录占60%)
+        #     if on_progress and total_streams > 0:
+        #         progress = 30.0 + ((idx + 1) / total_streams) * 60.0
+        #         on_progress(progress)
 
-        # 提取转录结果
+        # 使用sherpa-onnx的批量解码API (一次性解码所有流, 内部优化)
+        recognizer.decode_streams(streams)
+        # 接码耗时
+        end_time = time.time()
+        logger.info(f"批量解码耗时: {end_time - start_time:.2f}s")
+        # # 提取转录结果
         for i, (seg, stream) in enumerate(zip(segments, streams)):
             result = stream.result
             seg.text = (
@@ -545,21 +552,21 @@ class BatchProcessor:
 
     def process_files(
         self,
-        file_paths: List[Path],
+        file_paths: list[Path],
         transcription_engine,
         vad_detector,
-        output_dir: Optional[Path] = None,
+        output_dir: Path | None = None,
         subtitle_format: str = "srt",
         keep_temp: bool = False,
         verbose: bool = False,
         # 新增: 批量处理回调参数
-        on_file_start: Optional[OnFileStart] = None,
-        on_file_progress: Optional[OnFileProgress] = None,
-        on_segment: Optional[OnSegment] = None,
-        on_file_complete: Optional[OnFileComplete] = None,
-        cancel_event: Optional[threading.Event] = None,
+        on_file_start: OnFileStart | None = None,
+        on_file_progress: OnFileProgress | None = None,
+        on_segment: OnSegment | None = None,
+        on_file_complete: OnFileComplete | None = None,
+        cancel_event: threading.Event | None = None,
         continue_on_error: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         批量处理多个文件
 
@@ -729,12 +736,12 @@ class BatchProcessor:
         dir_path: Path,
         transcription_engine,
         vad_detector,
-        output_dir: Optional[Path] = None,
+        output_dir: Path | None = None,
         subtitle_format: str = "srt",
         recursive: bool = False,
         keep_temp: bool = False,
         verbose: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         处理目录下的所有媒体文件
 

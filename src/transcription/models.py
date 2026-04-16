@@ -33,6 +33,7 @@ class TranscriptionModel(Enum):
     SHERPA_ONNX_STREAMING = "sherpa_onnx_streaming"  # sherpa-onnx流式模型
     SHERPA_ONNX_OFFLINE = "sherpa_onnx_offline"      # sherpa-onnx离线模型
     SENSE_VOICE = "sense_voice"                      # sense-voice模型
+    QWEN_ARS = "qwen_ars"
 
 
 class ProcessorType(Enum):
@@ -96,6 +97,15 @@ class TranscriptionConfig:
     hotwords_file: str = ""
     blank_penalty: float = 0.0
     temperature: float = 1.0
+
+    # 下面为qwen3-ars参数
+    hotwords: str = ""              # 可选逗号分隔热词短语    
+    num_threads: int = 2            # qwen3-ars推理线程数
+    feature_dim: int = 128          # qwen3-ars特征维度
+    seed: int = 48                  # 随机seed
+    top_p: float = 0.8
+    max_new_tokens: int = 128
+    max_total_len: int = 512
 
     # 音频保存配置
     enable_audio_save: bool = False                    # 是否启用音频保存
