@@ -17,14 +17,15 @@ Created: 2025-09-28
 """
 
 # 标准库导入
-import logging           # 日志系统
-import time             # 时间处理
-import threading        # 线程同步
-import os               # 操作系统接口
-from pathlib import Path # 路径处理
+import logging  # 日志系统
+import os  # 操作系统接口
+import threading  # 线程同步
+import time  # 时间处理
+from collections.abc import Callable  # 类型提示
 from datetime import datetime  # 日期时间处理
-from typing import List, Optional, Callable, Iterator, Dict, Any  # 类型提示
-import numpy as np      # 数值计算库
+from pathlib import Path  # 路径处理
+
+import numpy as np  # 数值计算库
 
 # ============================================================================
 # 可选依赖导入和可用性检测 (Optional Dependencies Detection)
@@ -63,21 +64,21 @@ except ImportError:
     sf = None
 
 from .models import (
-    TranscriptionConfig, TranscriptionResult, BatchTranscriptionResult,
-    ModelInfo, TranscriptionStatistics, TranscriptionModel, ProcessorType,
-    LanguageCode, TranscriptionError, ModelLoadError, TranscriptionProcessingError,
-    ConfigurationError, ModelNotLoadedError, UnsupportedModelError,
-    AudioFormatError
+    BatchTranscriptionResult,
+    ConfigurationError,
+    LanguageCode,
+    ModelInfo,
+    ModelLoadError,
+    ModelNotLoadedError,
+    ProcessorType,
+    TranscriptionConfig,
+    TranscriptionModel,
+    TranscriptionResult,
+    TranscriptionStatistics,
+    UnsupportedModelError,
 )
 
 # 内部模块导入
-from .models import (
-    TranscriptionConfig, TranscriptionResult, BatchTranscriptionResult,
-    ModelInfo, TranscriptionStatistics, TranscriptionModel, ProcessorType,
-    LanguageCode, TranscriptionError, ModelLoadError, TranscriptionProcessingError,
-    ConfigurationError, ModelNotLoadedError, UnsupportedModelError,
-    AudioFormatError
-)
 
 # GPU检测器可选导入
 try:
@@ -136,10 +137,10 @@ class TranscriptionEngine:
         self.config = config                           # 转录配置
         self._model = None                             # 加载的模型对象
         self._recognizer = None                        # 识别器实例
-        self._model_info: Optional[ModelInfo] = None   # 模型信息
-        self._gpu_detector: Optional[GPUDetector] = None  # GPU检测器
+        self._model_info: ModelInfo | None = None   # 模型信息
+        self._gpu_detector: GPUDetector | None = None  # GPU检测器
         self._statistics = TranscriptionStatistics()   # 性能统计
-        self._callbacks: List[Callable[[TranscriptionResult], None]] = []  # 结果回调列表
+        self._callbacks: list[Callable[[TranscriptionResult], None]] = []  # 结果回调列表
         self._callback_lock = threading.Lock()         # 回调线程锁
         self._model_lock = threading.Lock()            # 模型操作线程锁
 
@@ -238,8 +239,8 @@ class TranscriptionEngine:
                 self._load_sherpa_offline_model()
             elif self.config.model == TranscriptionModel.SENSE_VOICE:
                 self._load_sense_voice_model()
-            elif self.config.model == TranscriptionModel.QWEN_ARS:
-                self._load_qwen_ars_model()
+            elif self.config.model == TranscriptionModel.QWEN_ASR:
+                self._load_qwen_asr_model()
             else:
                 raise UnsupportedModelError(f"Unsupported model type: {self.config.model}")
 
@@ -392,10 +393,10 @@ class TranscriptionEngine:
             else:
                 raise ModelLoadError(f"加载sense-voice模型失败: {e}")
 
-    def _load_qwen_ars_model(self) -> None:
-        """Load Qwen-ARS model - enhanced implementation with fallback"""
+    def _load_qwen_asr_model(self) -> None:
+        """Load Qwen-ASR model - enhanced implementation with fallback"""
         try:
-            logger.info(f"正在加载Qwen-ARS模型: {self.config.model_path}")
+            logger.info(f"正在加载Qwen-ASR模型: {self.config.model_path}")
 
             # 检查模型文件是否存在
             if not os.path.exists(self.config.model_path):
@@ -410,8 +411,8 @@ class TranscriptionEngine:
                 elif "decoder" in file and file.endswith(".onnx"):
                     decoder_path = self.config.model_path + "/" + file
             if not encoder_path or not decoder_path:
-                raise ModelLoadError("未找到Qwen-ARS模型的encoder或decoder文件")
-            # 创建Qwen-ARS识别器
+                raise ModelLoadError("未找到Qwen-ASR模型的encoder或decoder文件")
+            # 创建Qwen-ASR识别器
             self._recognizer = sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
                 conv_frontend = self.config.model_path + "/conv_frontend.onnx",
                 encoder = encoder_path,
@@ -430,13 +431,13 @@ class TranscriptionEngine:
                 seed = self.config.seed,
             )
 
-            logger.info("Qwen-ARS模型加载成功")
+            logger.info("Qwen-ASR模型加载成功")
 
         except Exception as e:
             if "sherpa_onnx" in str(e) or "not found" in str(e).lower():
                 logger.warning(f"sherpa-onnx模型加载失败，使用基础实现: {e}")
             else:
-                raise ModelLoadError(f"加载Qwen-ARS模型失败: {e}")
+                raise ModelLoadError(f"加载Qwen-ASR模型失败: {e}")
 
     def transcribe_audio(self, audio_data: np.ndarray, return_partial: bool = False) -> TranscriptionResult:
         """
@@ -486,7 +487,7 @@ class TranscriptionEngine:
                     self._recognizer.decode_stream(stream)
             else:
                 self._recognizer.decode_stream(stream)
-                
+
             # Get result
             if hasattr(self._recognizer, 'get_result'):
                 result = self._recognizer.get_result(stream)
@@ -575,7 +576,7 @@ class TranscriptionEngine:
             processing_time_ms=(time.time() - start_time) * 1000
         )
 
-    def transcribe_streaming(self, audio_chunk: np.ndarray) -> Optional[TranscriptionResult]:
+    def transcribe_streaming(self, audio_chunk: np.ndarray) -> TranscriptionResult | None:
         """
         Process streaming audio chunk
 
@@ -659,7 +660,7 @@ class TranscriptionEngine:
             logger.error(f"Streaming transcription error: {e}")
             return None
 
-    def transcribe_batch(self, audio_segments: List[np.ndarray]) -> BatchTranscriptionResult:
+    def transcribe_batch(self, audio_segments: list[np.ndarray]) -> BatchTranscriptionResult:
         """
         Transcribe multiple audio segments
 
@@ -716,7 +717,7 @@ class TranscriptionEngine:
         self._statistics.update_confidence(result.confidence)
         self._statistics.increment_successful()
 
-    def _save_audio(self, audio_data: np.ndarray, result_text: str = "") -> Optional[str]:
+    def _save_audio(self, audio_data: np.ndarray, result_text: str = "") -> str | None:
         """
         保存音频数据到文件
 
@@ -771,7 +772,7 @@ class TranscriptionEngine:
             return None
 
     @property
-    def model_info(self) -> Optional[ModelInfo]:
+    def model_info(self) -> ModelInfo | None:
         """Get model information"""
         return self._model_info
 
@@ -840,7 +841,7 @@ class StreamingTranscriptionEngine(TranscriptionEngine):
         if self._recognizer:
             self._stream = self._recognizer.create_stream()
 
-    def process_chunk(self, audio_chunk: np.ndarray) -> Optional[TranscriptionResult]:
+    def process_chunk(self, audio_chunk: np.ndarray) -> TranscriptionResult | None:
         """
         Process single audio chunk with optimized streaming
 

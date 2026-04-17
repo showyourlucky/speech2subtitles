@@ -4,13 +4,11 @@
 定义系统配置的数据结构和验证逻辑
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
-from pathlib import Path
-from datetime import datetime
 import uuid
-import os
-
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 CONFIG_SCHEMA_VERSION = "2.0"
 
@@ -18,7 +16,7 @@ CONFIG_SCHEMA_VERSION = "2.0"
 # 系统常量定义
 class AudioConstants:
     """音频相关常量"""
-    SUPPORTED_SAMPLE_RATES: List[int] = [8000, 16000, 22050, 44100, 48000]
+    SUPPORTED_SAMPLE_RATES: list[int] = [8000, 16000, 22050, 44100, 48000]
     DEFAULT_SAMPLE_RATE: int = 16000
     MIN_CHUNK_SIZE: int = 1
     MAX_CHUNK_SIZE: int = 8192
@@ -41,31 +39,36 @@ class VadConstants:
 
 class ModelConstants:
     """模型相关常量"""
-    SUPPORTED_EXTENSIONS: List[str] = ['.onnx', '.bin']
-    SUPPORTED_INPUT_SOURCES: List[str] = ["microphone", "system"]  # 实时音频输入源
-    SUPPORTED_TRANSCRIPTION_MODEL_TYPES: List[str] = [
+    SUPPORTED_EXTENSIONS: list[str] = ['.onnx', '.bin']
+    SUPPORTED_INPUT_SOURCES: list[str] = ["microphone", "system"]  # 实时音频输入源
+    SUPPORTED_TRANSCRIPTION_MODEL_TYPES: list[str] = [
         "sense_voice",
         "sherpa_onnx_streaming",
         "sherpa_onnx_offline",
-        "qwen_ars",
+        "qwen_asr",
     ]
 
 
 class OutputConstants:
     """输出相关常量"""
-    SUPPORTED_FORMATS: List[str] = ["text", "json"]
+    SUPPORTED_FORMATS: list[str] = ["text", "json"]
     DEFAULT_FORMAT: str = "text"
 
 
 class SubtitleConstants:
     """字幕相关常量"""
-    SUPPORTED_FORMATS: List[str] = ["srt", "vtt", "ass"]
+    SUPPORTED_FORMATS: list[str] = ["srt", "vtt", "ass"]
     DEFAULT_FORMAT: str = "srt"
+    # 离线字幕切分/合并参数默认值
+    DEFAULT_STREAM_MERGE_TARGET_DURATION: float = 15.0
+    DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD: float = 8.0
+    DEFAULT_STREAM_MERGE_MAX_GAP: float = 0.6
+    DEFAULT_MAX_SUBTITLE_DURATION: float = 5.0
 
 
 class SubtitleDisplayConstants:
     """字幕显示相关常量"""
-    SUPPORTED_POSITIONS: List[str] = ["top", "center", "bottom"]
+    SUPPORTED_POSITIONS: list[str] = ["top", "center", "bottom"]
     DEFAULT_POSITION: str = "bottom"
     MIN_FONT_SIZE: int = 12
     MAX_FONT_SIZE: int = 72
@@ -97,7 +100,7 @@ class VadProfile:
 
     # 模型配置
     model: str = "silero_vad"                            # 模型类型: "silero_vad" 或 "ten_vad"
-    model_path: Optional[str] = None                     # 自定义模型路径,None时使用默认路径
+    model_path: str | None = None                     # 自定义模型路径,None时使用默认路径
     use_sherpa_onnx: bool = True                         # 是否使用sherpa-onnx框架
 
     # 窗口配置
@@ -210,7 +213,7 @@ class ModelProfile:
     model_path: str = ""                                                              # 模型文件路径
     model_type: str = "sense_voice"                                                   # 转录模型类型
 
-    # qwen3-ars参数（仅在 model_type=QWEN_ARS 时生效）
+    # qwen3_asr参数（仅在 model_type=QWEN_ASR 时生效）
     hotwords: str = ""                                                                # 热词（逗号分隔）
     num_threads: int = 2                                                              # 推理线程数
     feature_dim: int = 128                                                            # 特征维度
@@ -221,8 +224,8 @@ class ModelProfile:
     seed: int = 48                                                                    # 随机种子
 
     # 可选元数据
-    description: Optional[str] = None                                                 # 模型描述信息
-    supported_languages: Optional[List[str]] = None                                   # 支持的语言列表 ["zh", "en", "ja", "ko", "yue"]
+    description: str | None = None                                                 # 模型描述信息
+    supported_languages: list[str] | None = None                                   # 支持的语言列表 ["zh", "en", "ja", "ko", "yue"]
 
     # 时间戳
     created_at: datetime = field(default_factory=datetime.now)                        # 创建时间
@@ -254,8 +257,8 @@ class ModelProfile:
                 f"支持: {ModelConstants.SUPPORTED_TRANSCRIPTION_MODEL_TYPES}"
             )
 
-        # 仅在Qwen ARS时校验专属参数
-        if self.model_type == "qwen_ars":
+        # 仅在Qwen ASR时校验专属参数
+        if self.model_type == "qwen_asr":
             if self.num_threads <= 0:
                 raise ValueError(f"num_threads必须大于0: {self.num_threads}")
             if self.feature_dim <= 0:
@@ -289,7 +292,7 @@ class ModelProfile:
             supported_languages=["zh", "en", "ja", "ko", "yue"]
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         转换为字典(用于序列化)
 
@@ -307,8 +310,8 @@ class ModelProfile:
             "updated_at": self.updated_at.isoformat()
         }
 
-        # 仅在QWEN_ARS时序列化专属参数，避免污染其它模型配置
-        if self.model_type == "qwen_ars":
+        # 仅在QWEN_ASR时序列化专属参数，避免污染其它模型配置
+        if self.model_type == "qwen_asr":
             data.update({
                 "hotwords": self.hotwords,
                 "num_threads": self.num_threads,
@@ -323,7 +326,7 @@ class ModelProfile:
         return data
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'ModelProfile':
+    def from_dict(data: dict[str, Any]) -> 'ModelProfile':
         """
         从字典创建实例(用于反序列化)
 
@@ -396,11 +399,11 @@ class SubtitleDisplayConfig:
 @dataclass
 class RuntimeConfig:
     """运行时配置分区"""
-    input_source: Optional[str] = None
-    input_file: Optional[List[str]] = None
+    input_source: str | None = None
+    input_file: list[str] | None = None
     use_gpu: bool = True
-    transcription_language: Optional[str] = None
-    model_profiles: Dict[str, ModelProfile] = field(default_factory=dict)
+    transcription_language: str | None = None
+    model_profiles: dict[str, ModelProfile] = field(default_factory=dict)
     active_model_profile_id: str = "default"
 
 
@@ -410,13 +413,13 @@ class AudioConfigSettings:
     sample_rate: int = AudioConstants.DEFAULT_SAMPLE_RATE
     chunk_size: int = AudioConstants.DEFAULT_CHUNK_SIZE
     channels: int = AudioConstants.DEFAULT_CHANNELS
-    device_id: Optional[int] = None
+    device_id: int | None = None
 
 
 @dataclass
 class VadConfigSettings:
     """VAD配置分区"""
-    vad_profiles: Dict[str, VadProfile] = field(default_factory=dict)
+    vad_profiles: dict[str, VadProfile] = field(default_factory=dict)
     active_vad_profile_id: str = "default"
 
 
@@ -431,10 +434,15 @@ class OutputConfigSettings:
 @dataclass
 class SubtitleConfigSettings:
     """字幕相关配置分区"""
-    output_dir: Optional[str] = None
+    output_dir: str | None = None
     subtitle_format: str = SubtitleConstants.DEFAULT_FORMAT
     keep_temp: bool = False
     verbose: bool = False
+    # 离线文件模式下的 stream 合并和字幕切分策略
+    stream_merge_target_duration: float = SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION
+    stream_long_segment_threshold: float = SubtitleConstants.DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD
+    stream_merge_max_gap: float = SubtitleConstants.DEFAULT_STREAM_MERGE_MAX_GAP
+    max_subtitle_duration: float = SubtitleConstants.DEFAULT_MAX_SUBTITLE_DURATION
     subtitle_display: SubtitleDisplayConfig = field(default_factory=SubtitleDisplayConfig)
 
 
@@ -469,19 +477,19 @@ class Config:
         active_profile.model_path = value or ""
 
     @property
-    def input_source(self) -> Optional[str]:
+    def input_source(self) -> str | None:
         return self.runtime.input_source
 
     @input_source.setter
-    def input_source(self, value: Optional[str]) -> None:
+    def input_source(self, value: str | None) -> None:
         self.runtime.input_source = value
 
     @property
-    def input_file(self) -> Optional[List[str]]:
+    def input_file(self) -> list[str] | None:
         return self.runtime.input_file
 
     @input_file.setter
-    def input_file(self, value: Optional[List[str]]) -> None:
+    def input_file(self, value: list[str] | None) -> None:
         self.runtime.input_file = value
 
     @property
@@ -493,19 +501,19 @@ class Config:
         self.runtime.use_gpu = value
 
     @property
-    def transcription_language(self) -> Optional[str]:
+    def transcription_language(self) -> str | None:
         return self.runtime.transcription_language
 
     @transcription_language.setter
-    def transcription_language(self, value: Optional[str]) -> None:
+    def transcription_language(self, value: str | None) -> None:
         self.runtime.transcription_language = value
 
     @property
-    def model_profiles(self) -> Dict[str, ModelProfile]:
+    def model_profiles(self) -> dict[str, ModelProfile]:
         return self.runtime.model_profiles
 
     @model_profiles.setter
-    def model_profiles(self, value: Dict[str, ModelProfile]) -> None:
+    def model_profiles(self, value: dict[str, ModelProfile]) -> None:
         self.runtime.model_profiles = value
 
     @property
@@ -541,19 +549,19 @@ class Config:
         self.audio.channels = value
 
     @property
-    def device_id(self) -> Optional[int]:
+    def device_id(self) -> int | None:
         return self.audio.device_id
 
     @device_id.setter
-    def device_id(self, value: Optional[int]) -> None:
+    def device_id(self, value: int | None) -> None:
         self.audio.device_id = value
 
     @property
-    def vad_profiles(self) -> Dict[str, VadProfile]:
+    def vad_profiles(self) -> dict[str, VadProfile]:
         return self.vad.vad_profiles
 
     @vad_profiles.setter
-    def vad_profiles(self, value: Dict[str, VadProfile]) -> None:
+    def vad_profiles(self, value: dict[str, VadProfile]) -> None:
         self.vad.vad_profiles = value
 
     @property
@@ -589,11 +597,11 @@ class Config:
         self.output.show_timestamp = value
 
     @property
-    def output_dir(self) -> Optional[str]:
+    def output_dir(self) -> str | None:
         return self.subtitle.output_dir
 
     @output_dir.setter
-    def output_dir(self, value: Optional[str]) -> None:
+    def output_dir(self, value: str | None) -> None:
         self.subtitle.output_dir = value
 
     @property
@@ -619,6 +627,38 @@ class Config:
     @verbose.setter
     def verbose(self, value: bool) -> None:
         self.subtitle.verbose = value
+
+    @property
+    def stream_merge_target_duration(self) -> float:
+        return self.subtitle.stream_merge_target_duration
+
+    @stream_merge_target_duration.setter
+    def stream_merge_target_duration(self, value: float) -> None:
+        self.subtitle.stream_merge_target_duration = value
+
+    @property
+    def stream_long_segment_threshold(self) -> float:
+        return self.subtitle.stream_long_segment_threshold
+
+    @stream_long_segment_threshold.setter
+    def stream_long_segment_threshold(self, value: float) -> None:
+        self.subtitle.stream_long_segment_threshold = value
+
+    @property
+    def stream_merge_max_gap(self) -> float:
+        return self.subtitle.stream_merge_max_gap
+
+    @stream_merge_max_gap.setter
+    def stream_merge_max_gap(self, value: float) -> None:
+        self.subtitle.stream_merge_max_gap = value
+
+    @property
+    def max_subtitle_duration(self) -> float:
+        return self.subtitle.max_subtitle_duration
+
+    @max_subtitle_duration.setter
+    def max_subtitle_duration(self, value: float) -> None:
+        self.subtitle.max_subtitle_duration = value
 
     @property
     def subtitle_display(self) -> SubtitleDisplayConfig:
@@ -738,7 +778,7 @@ class Config:
             self.model_profiles = {"default": ModelProfile.create_default_profile("")}
             self.active_model_profile_id = "default"
 
-    def _normalize_input_source(self) -> Optional[str]:
+    def _normalize_input_source(self) -> str | None:
         """归一化 input_source，统一空白字符串为 None。"""
         input_source = self.input_source
         if input_source is None:
@@ -749,7 +789,7 @@ class Config:
         normalized_source = input_source.strip()
         return normalized_source or None
 
-    def _normalize_input_file(self) -> Optional[List[str]]:
+    def _normalize_input_file(self) -> list[str] | None:
         """归一化 input_file，统一输出为非空字符串列表或 None。"""
         input_file = self.input_file
         if input_file is None:
@@ -763,7 +803,7 @@ class Config:
         if not isinstance(input_file, list):
             raise ValueError("input_file 必须是字符串、字符串列表或 None")
 
-        cleaned_files: List[str] = []
+        cleaned_files: list[str] = []
         for file_path in input_file:
             if not isinstance(file_path, str):
                 raise ValueError("input_file 必须是字符串列表")
@@ -845,6 +885,16 @@ class Config:
         if self.subtitle_display:
             self.subtitle_display.validate()
 
+        # 验证离线字幕切分/合并参数
+        if self.stream_merge_target_duration <= 0:
+            raise ValueError(f"stream_merge_target_duration 必须大于0: {self.stream_merge_target_duration}")
+        if self.stream_long_segment_threshold <= 0:
+            raise ValueError(f"stream_long_segment_threshold 必须大于0: {self.stream_long_segment_threshold}")
+        if self.stream_merge_max_gap < 0:
+            raise ValueError(f"stream_merge_max_gap 不能小于0: {self.stream_merge_max_gap}")
+        if self.max_subtitle_duration <= 0:
+            raise ValueError(f"max_subtitle_duration 必须大于0: {self.max_subtitle_duration}")
+
         # 确保默认方案
         self._ensure_default_profiles()
 
@@ -887,7 +937,7 @@ class Config:
         config.input_source = ""
         return config
 
-    def to_dict_v2(self) -> Dict[str, Any]:
+    def to_dict_v2(self) -> dict[str, Any]:
         """输出schema v2的配置字典"""
         return {
             "runtime": {
@@ -938,7 +988,11 @@ class Config:
                     "output_dir": self.output_dir,
                     "format": self.subtitle_format,
                     "keep_temp": self.keep_temp,
-                    "verbose": self.verbose
+                    "verbose": self.verbose,
+                    "stream_merge_target_duration": self.stream_merge_target_duration,
+                    "stream_long_segment_threshold": self.stream_long_segment_threshold,
+                    "stream_merge_max_gap": self.stream_merge_max_gap,
+                    "max_subtitle_duration": self.max_subtitle_duration,
                 },
                 "display": {
                     "enabled": self.subtitle_display.enabled,
@@ -953,19 +1007,19 @@ class Config:
             }
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """兼容接口：默认输出schema v2字典"""
         return self.to_dict_v2()
 
     @staticmethod
-    def from_dict(config_dict: Dict[str, Any]) -> 'Config':
+    def from_dict(config_dict: dict[str, Any]) -> 'Config':
         """根据字典结构自动解析"""
         if "runtime" in config_dict or "audio" in config_dict or "vad" in config_dict:
             return Config.from_dict_v2(config_dict)
         return Config.from_legacy_dict(config_dict)
 
     @staticmethod
-    def from_dict_v2(config_dict: Dict[str, Any]) -> 'Config':
+    def from_dict_v2(config_dict: dict[str, Any]) -> 'Config':
         """从schema v2字典构建配置"""
         runtime_dict = config_dict.get("runtime", {})
         audio_dict = config_dict.get("audio", {})
@@ -1039,6 +1093,22 @@ class Config:
                 subtitle_format=subtitle_dict.get("file", {}).get("format", "srt"),
                 keep_temp=subtitle_dict.get("file", {}).get("keep_temp", False),
                 verbose=subtitle_dict.get("file", {}).get("verbose", False),
+                stream_merge_target_duration=subtitle_dict.get("file", {}).get(
+                    "stream_merge_target_duration",
+                    SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION,
+                ),
+                stream_long_segment_threshold=subtitle_dict.get("file", {}).get(
+                    "stream_long_segment_threshold",
+                    SubtitleConstants.DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD,
+                ),
+                stream_merge_max_gap=subtitle_dict.get("file", {}).get(
+                    "stream_merge_max_gap",
+                    SubtitleConstants.DEFAULT_STREAM_MERGE_MAX_GAP,
+                ),
+                max_subtitle_duration=subtitle_dict.get("file", {}).get(
+                    "max_subtitle_duration",
+                    SubtitleConstants.DEFAULT_MAX_SUBTITLE_DURATION,
+                ),
                 subtitle_display=subtitle_display
             )
         )
@@ -1094,6 +1164,14 @@ class Config:
             config.keep_temp = config_dict.get("keep_temp")
         if "verbose" in config_dict:
             config.verbose = config_dict.get("verbose")
+        if "stream_merge_target_duration" in config_dict and config_dict.get("stream_merge_target_duration") is not None:
+            config.stream_merge_target_duration = config_dict.get("stream_merge_target_duration")
+        if "stream_long_segment_threshold" in config_dict and config_dict.get("stream_long_segment_threshold") is not None:
+            config.stream_long_segment_threshold = config_dict.get("stream_long_segment_threshold")
+        if "stream_merge_max_gap" in config_dict and config_dict.get("stream_merge_max_gap") is not None:
+            config.stream_merge_max_gap = config_dict.get("stream_merge_max_gap")
+        if "max_subtitle_duration" in config_dict and config_dict.get("max_subtitle_duration") is not None:
+            config.max_subtitle_duration = config_dict.get("max_subtitle_duration")
 
         subtitle_display_flat = config_dict.get("subtitle_display")
         if isinstance(subtitle_display_flat, dict):
@@ -1117,7 +1195,7 @@ class Config:
         return config
 
     @staticmethod
-    def from_legacy_dict(config_dict: Dict[str, Any]) -> 'Config':
+    def from_legacy_dict(config_dict: dict[str, Any]) -> 'Config':
         """从旧版(扁平字段)配置字典构建配置"""
         subtitle_display_dict = config_dict.get("subtitle_display", {})
         subtitle_display = SubtitleDisplayConfig(
@@ -1187,6 +1265,22 @@ class Config:
                 subtitle_format=config_dict.get("subtitle_format", "srt"),
                 keep_temp=config_dict.get("keep_temp", False),
                 verbose=config_dict.get("verbose", False),
+                stream_merge_target_duration=config_dict.get(
+                    "stream_merge_target_duration",
+                    SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION,
+                ),
+                stream_long_segment_threshold=config_dict.get(
+                    "stream_long_segment_threshold",
+                    SubtitleConstants.DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD,
+                ),
+                stream_merge_max_gap=config_dict.get(
+                    "stream_merge_max_gap",
+                    SubtitleConstants.DEFAULT_STREAM_MERGE_MAX_GAP,
+                ),
+                max_subtitle_duration=config_dict.get(
+                    "max_subtitle_duration",
+                    SubtitleConstants.DEFAULT_MAX_SUBTITLE_DURATION,
+                ),
                 subtitle_display=subtitle_display
             )
         )

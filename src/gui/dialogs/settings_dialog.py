@@ -13,20 +13,35 @@
 """
 
 import logging
-from typing import Optional, Dict, Any
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
-    QStackedWidget, QPushButton, QMessageBox,
-    QWidget, QListWidgetItem, QFormLayout,
-    QLabel, QLineEdit, QCheckBox, QSlider,
-    QSpinBox, QDoubleSpinBox, QComboBox,
-    QGroupBox, QFileDialog, QColorDialog,
-    QFontComboBox
-)
-from PySide6.QtCore import Signal, Slot, Qt
-from PySide6.QtGui import QIcon, QColor, QFont, QFontDatabase
+from typing import Any
 
-from src.config.models import Config, SubtitleDisplayConfig
+from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QColorDialog,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFontComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.config.models import Config
 from src.gui.bridges.config_bridge import ConfigBridge
 from src.transcription.models import TranscriptionModel
 
@@ -37,7 +52,7 @@ MODEL_TYPE_OPTIONS = {
     "SenseVoice": TranscriptionModel.SENSE_VOICE.value,
     "Sherpa Onnx Streaming": TranscriptionModel.SHERPA_ONNX_STREAMING.value,
     "Sherpa Onnx Offline": TranscriptionModel.SHERPA_ONNX_OFFLINE.value,
-    "Qwen ARS": TranscriptionModel.QWEN_ARS.value,
+    "Qwen ASR": TranscriptionModel.QWEN_ASR.value,
 }
 
 
@@ -50,7 +65,7 @@ class SettingsDialog(QDialog):
     # 信号定义
     settings_changed = Signal(object)  # Config
 
-    def __init__(self, config: Config, config_bridge: ConfigBridge, parent: Optional[QWidget] = None):
+    def __init__(self, config: Config, config_bridge: ConfigBridge, parent: QWidget | None = None):
         """初始化设置对话框
 
         Args:
@@ -65,38 +80,38 @@ class SettingsDialog(QDialog):
         self.original_config = self._clone_config(config)  # 保存原始配置
 
         # UI组件
-        self.nav_list: Optional[QListWidget] = None
-        self.pages_widget: Optional[QStackedWidget] = None
-        self.save_button: Optional[QPushButton] = None
-        self.cancel_button: Optional[QPushButton] = None
-        self.restore_button: Optional[QPushButton] = None
-        self.import_button: Optional[QPushButton] = None
-        self.export_button: Optional[QPushButton] = None
+        self.nav_list: QListWidget | None = None
+        self.pages_widget: QStackedWidget | None = None
+        self.save_button: QPushButton | None = None
+        self.cancel_button: QPushButton | None = None
+        self.restore_button: QPushButton | None = None
+        self.import_button: QPushButton | None = None
+        self.export_button: QPushButton | None = None
 
         # 配置页面
-        self.general_page: Optional[QWidget] = None
-        self.model_page: Optional[QWidget] = None
-        self.vad_page: Optional[QWidget] = None
-        self.audio_page: Optional[QWidget] = None
-        self.gpu_page: Optional[QWidget] = None
-        self.subtitle_page: Optional[QWidget] = None
+        self.general_page: QWidget | None = None
+        self.model_page: QWidget | None = None
+        self.vad_page: QWidget | None = None
+        self.audio_page: QWidget | None = None
+        self.gpu_page: QWidget | None = None
+        self.subtitle_page: QWidget | None = None
 
         # VAD方案管理组件
-        self.vad_profile_list: Optional[QListWidget] = None
-        self.vad_add_button: Optional[QPushButton] = None
-        self.vad_delete_button: Optional[QPushButton] = None
-        self.vad_copy_button: Optional[QPushButton] = None
-        self.current_editing_profile_id: Optional[str] = None  # 当前正在编辑的VAD方案ID
+        self.vad_profile_list: QListWidget | None = None
+        self.vad_add_button: QPushButton | None = None
+        self.vad_delete_button: QPushButton | None = None
+        self.vad_copy_button: QPushButton | None = None
+        self.current_editing_profile_id: str | None = None  # 当前正在编辑的VAD方案ID
 
         # 模型方案管理组件
-        self.model_profile_list: Optional[QListWidget] = None
-        self.model_add_button: Optional[QPushButton] = None
-        self.model_delete_button: Optional[QPushButton] = None
-        self.model_copy_button: Optional[QPushButton] = None
-        self.current_editing_model_profile_id: Optional[str] = None  # 当前正在编辑的模型方案ID
+        self.model_profile_list: QListWidget | None = None
+        self.model_add_button: QPushButton | None = None
+        self.model_delete_button: QPushButton | None = None
+        self.model_copy_button: QPushButton | None = None
+        self.current_editing_model_profile_id: str | None = None  # 当前正在编辑的模型方案ID
 
         # 配置控件引用（用于收集设置）
-        self.config_widgets: Dict[str, Any] = {}
+        self.config_widgets: dict[str, Any] = {}
 
         # 初始化UI
         self._setup_ui()
@@ -500,37 +515,37 @@ class SettingsDialog(QDialog):
         self.config_widgets['model_profile_type'] = model_type_combo
         model_type_combo.currentTextChanged.connect(self._on_model_type_changed)
 
-        # Qwen ARS参数（仅在模型类型为QWEN_ARS时显示）
-        qwen_ars_group = QGroupBox("Qwen ARS 参数")
-        qwen_ars_layout = QFormLayout(qwen_ars_group)
+        # Qwen ASR参数（仅在模型类型为QWEN_ASR时显示）
+        qwen_asr_group = QGroupBox("Qwen ASR 参数")
+        qwen_asr_layout = QFormLayout(qwen_asr_group)
 
         qwen_hotwords_edit = QLineEdit()
         qwen_hotwords_edit.setPlaceholderText("可选: 逗号分隔热词，例如 你好,字幕")
-        qwen_ars_layout.addRow("热词(hotwords):", qwen_hotwords_edit)
+        qwen_asr_layout.addRow("热词(hotwords):", qwen_hotwords_edit)
         self.config_widgets['model_profile_qwen_hotwords'] = qwen_hotwords_edit
 
         qwen_num_threads_spinbox = QSpinBox()
         qwen_num_threads_spinbox.setRange(1, 64)
         qwen_num_threads_spinbox.setValue(2)
-        qwen_ars_layout.addRow("线程数(num_threads):", qwen_num_threads_spinbox)
+        qwen_asr_layout.addRow("线程数(num_threads):", qwen_num_threads_spinbox)
         self.config_widgets['model_profile_qwen_num_threads'] = qwen_num_threads_spinbox
 
         qwen_feature_dim_spinbox = QSpinBox()
         qwen_feature_dim_spinbox.setRange(1, 4096)
         qwen_feature_dim_spinbox.setValue(128)
-        qwen_ars_layout.addRow("特征维度(feature_dim):", qwen_feature_dim_spinbox)
+        qwen_asr_layout.addRow("特征维度(feature_dim):", qwen_feature_dim_spinbox)
         self.config_widgets['model_profile_qwen_feature_dim'] = qwen_feature_dim_spinbox
 
         qwen_max_total_len_spinbox = QSpinBox()
         qwen_max_total_len_spinbox.setRange(1, 32768)
         qwen_max_total_len_spinbox.setValue(512)
-        qwen_ars_layout.addRow("最大总长度(max_total_len):", qwen_max_total_len_spinbox)
+        qwen_asr_layout.addRow("最大总长度(max_total_len):", qwen_max_total_len_spinbox)
         self.config_widgets['model_profile_qwen_max_total_len'] = qwen_max_total_len_spinbox
 
         qwen_max_new_tokens_spinbox = QSpinBox()
         qwen_max_new_tokens_spinbox.setRange(1, 32768)
         qwen_max_new_tokens_spinbox.setValue(128)
-        qwen_ars_layout.addRow("最大新Token(max_new_tokens):", qwen_max_new_tokens_spinbox)
+        qwen_asr_layout.addRow("最大新Token(max_new_tokens):", qwen_max_new_tokens_spinbox)
         self.config_widgets['model_profile_qwen_max_new_tokens'] = qwen_max_new_tokens_spinbox
 
         qwen_temperature_spinbox = QDoubleSpinBox()
@@ -538,7 +553,7 @@ class SettingsDialog(QDialog):
         qwen_temperature_spinbox.setSingleStep(0.01)
         qwen_temperature_spinbox.setDecimals(2)
         qwen_temperature_spinbox.setValue(1.0)
-        qwen_ars_layout.addRow("温度(temperature):", qwen_temperature_spinbox)
+        qwen_asr_layout.addRow("温度(temperature):", qwen_temperature_spinbox)
         self.config_widgets['model_profile_qwen_temperature'] = qwen_temperature_spinbox
 
         qwen_top_p_spinbox = QDoubleSpinBox()
@@ -546,18 +561,18 @@ class SettingsDialog(QDialog):
         qwen_top_p_spinbox.setSingleStep(0.01)
         qwen_top_p_spinbox.setDecimals(2)
         qwen_top_p_spinbox.setValue(0.8)
-        qwen_ars_layout.addRow("Top-p(top_p):", qwen_top_p_spinbox)
+        qwen_asr_layout.addRow("Top-p(top_p):", qwen_top_p_spinbox)
         self.config_widgets['model_profile_qwen_top_p'] = qwen_top_p_spinbox
 
         qwen_seed_spinbox = QSpinBox()
         qwen_seed_spinbox.setRange(0, 2147483647)
         qwen_seed_spinbox.setValue(48)
-        qwen_ars_layout.addRow("随机种子(seed):", qwen_seed_spinbox)
+        qwen_asr_layout.addRow("随机种子(seed):", qwen_seed_spinbox)
         self.config_widgets['model_profile_qwen_seed'] = qwen_seed_spinbox
 
-        right_layout.addRow(qwen_ars_group)
-        self.config_widgets['model_profile_qwen_group'] = qwen_ars_group
-        self._update_qwen_ars_params_visibility(TranscriptionModel.SENSE_VOICE.value)
+        right_layout.addRow(qwen_asr_group)
+        self.config_widgets['model_profile_qwen_group'] = qwen_asr_group
+        self._update_qwen_asr_params_visibility(TranscriptionModel.SENSE_VOICE.value)
 
         # 描述
         description_edit = QLineEdit()
@@ -1055,9 +1070,9 @@ class SettingsDialog(QDialog):
         if 'model_profile_type' in self.config_widgets:
             selected_text = self.config_widgets['model_profile_type'].currentText()
             profile.model_type = MODEL_TYPE_OPTIONS.get(selected_text, TranscriptionModel.SENSE_VOICE.value)
-            self._update_qwen_ars_params_visibility(profile.model_type)
+            self._update_qwen_asr_params_visibility(profile.model_type)
 
-        # 更新Qwen ARS参数
+        # 更新Qwen ASR参数
         if 'model_profile_qwen_hotwords' in self.config_widgets:
             profile.hotwords = self.config_widgets['model_profile_qwen_hotwords'].text().strip()
         if 'model_profile_qwen_num_threads' in self.config_widgets:
@@ -1214,7 +1229,7 @@ class SettingsDialog(QDialog):
 
         # 简单的文件大小检查
         file_size_mb = model_file.stat().st_size / (1024 * 1024)
-        
+
 
         QMessageBox.information(self, "验证成功", f"模型文件验证通过\n文件大小: {file_size_mb:.1f} MB")
 
@@ -1458,7 +1473,7 @@ class SettingsDialog(QDialog):
                     selected_label = label
                     break
             self.config_widgets['model_profile_type'].setCurrentText(selected_label)
-            self._update_qwen_ars_params_visibility(current_model_type)
+            self._update_qwen_asr_params_visibility(current_model_type)
 
         if 'model_profile_qwen_hotwords' in self.config_widgets:
             self.config_widgets['model_profile_qwen_hotwords'].setText(getattr(profile, 'hotwords', ""))
@@ -1481,16 +1496,16 @@ class SettingsDialog(QDialog):
 
     @Slot(str)
     def _on_model_type_changed(self, model_label: str) -> None:
-        """模型类型切换时更新Qwen ARS参数可见性"""
+        """模型类型切换时更新Qwen ASR参数可见性"""
         model_type = MODEL_TYPE_OPTIONS.get(model_label, TranscriptionModel.SENSE_VOICE.value)
-        self._update_qwen_ars_params_visibility(model_type)
+        self._update_qwen_asr_params_visibility(model_type)
 
-    def _update_qwen_ars_params_visibility(self, model_type: str) -> None:
-        """根据模型类型显示/隐藏Qwen ARS参数区域"""
+    def _update_qwen_asr_params_visibility(self, model_type: str) -> None:
+        """根据模型类型显示/隐藏Qwen ASR参数区域"""
         group = self.config_widgets.get('model_profile_qwen_group')
         if group is None:
             return
-        group.setVisible(model_type == TranscriptionModel.QWEN_ARS.value)
+        group.setVisible(model_type == TranscriptionModel.QWEN_ASR.value)
 
     @Slot()
     def _on_add_model_profile(self) -> None:
@@ -1658,9 +1673,10 @@ class SettingsDialog(QDialog):
                 return
 
         # 创建方案副本
-        from src.config.models import ModelProfile
         import uuid
         from datetime import datetime
+
+        from src.config.models import ModelProfile
 
         new_profile = ModelProfile(
             profile_id=f"model_{uuid.uuid4().hex[:8]}",

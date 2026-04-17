@@ -4,10 +4,11 @@
 统一处理以下逻辑，避免多处重复实现：
 1. 解析模型类型（含异常回退）
 2. 解析语言提示（以 pipeline 逻辑为主）
-3. 构建 TranscriptionConfig（含 QWEN_ARS 专属参数）
+3. 构建 TranscriptionConfig（含 QWEN_ASR 专属参数）
 """
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from src.transcription.models import (
     LanguageCode,
@@ -19,7 +20,7 @@ from src.transcription.models import (
 
 def resolve_transcription_model_type(
     config: Any,
-    on_warning: Optional[Callable[[str], None]] = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> TranscriptionModel:
     """
     解析当前配置应使用的转录模型类型。
@@ -45,7 +46,7 @@ def resolve_transcription_model_type(
     try:
         return TranscriptionModel(raw_model_type)
     except ValueError:
-        # 再按枚举名称匹配（如 QWEN_ARS）
+        # 再按枚举名称匹配（如 QWEN_ASR）
         model_name = str(raw_model_type).strip().upper()
         if model_name in TranscriptionModel.__members__:
             return TranscriptionModel[model_name]
@@ -56,7 +57,7 @@ def resolve_transcription_model_type(
 
 
 def _parse_language_hint(
-    raw_language: Optional[str],
+    raw_language: str | None,
     default: LanguageCode = LanguageCode.AUTO,
 ) -> LanguageCode:
     """将字符串语言配置解析为 LanguageCode（不包含场景默认策略）。"""
@@ -75,8 +76,8 @@ def _parse_language_hint(
 
 def resolve_transcription_language(
     config: Any,
-    on_warning: Optional[Callable[[str], None]] = None,
-    on_info: Optional[Callable[[str], None]] = None,
+    on_warning: Callable[[str], None] | None = None,
+    on_info: Callable[[str], None] | None = None,
 ) -> LanguageCode:
     """
     解析当前配置应使用的识别语言（以 pipeline 逻辑为主）。
@@ -105,9 +106,9 @@ def resolve_transcription_language(
 def build_transcription_config(
     config: Any,
     *,
-    gpu_available: Optional[bool] = None,
-    on_warning: Optional[Callable[[str], None]] = None,
-    on_info: Optional[Callable[[str], None]] = None,
+    gpu_available: bool | None = None,
+    on_warning: Callable[[str], None] | None = None,
+    on_info: Callable[[str], None] | None = None,
 ) -> TranscriptionConfig:
     """
     构建统一的转录配置对象。
@@ -130,11 +131,11 @@ def build_transcription_config(
     use_gpu = bool(config.use_gpu and (gpu_available if gpu_available is not None else True))
 
     active_model_profile = config.get_active_model_profile()
-    qwen_ars_kwargs = {}
-    if resolved_model == TranscriptionModel.QWEN_ARS:
+    qwen_asr_kwargs = {}
+    if resolved_model == TranscriptionModel.QWEN_ASR:
         try:
-            
-            qwen_ars_kwargs = {
+
+            qwen_asr_kwargs = {
                 "hotwords": getattr(active_model_profile, "hotwords", ""),
                 "feature_dim": getattr(active_model_profile, "feature_dim", 128),
                 "max_total_len": getattr(active_model_profile, "max_total_len", 512),
@@ -145,7 +146,7 @@ def build_transcription_config(
             }
         except Exception as e:
             if on_warning:
-                on_warning(f"读取QWEN_ARS参数失败，将使用默认值: {e}")
+                on_warning(f"读取QWEN_ASR参数失败，将使用默认值: {e}")
 
     return TranscriptionConfig(
         model=resolved_model,
@@ -155,5 +156,5 @@ def build_transcription_config(
         sample_rate=config.sample_rate,
         use_gpu=use_gpu,
         num_threads = active_model_profile.num_threads if hasattr(active_model_profile, "num_threads") else 4,
-        **qwen_ars_kwargs,
+        **qwen_asr_kwargs,
     )

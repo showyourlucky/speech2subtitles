@@ -38,7 +38,7 @@ class TestConfig:
 
     def test_invalid_model_path(self):
         """测试无效模型路径"""
-        with pytest.raises(ValueError, match="模型文件不存在"):
+        with pytest.raises(ValueError, match="模型路径不存在"):
             config = Config()
             config.model_path = "nonexistent.onnx"
             config.input_source = "microphone"
@@ -122,6 +122,52 @@ class TestConfig:
         assert config.vad_profiles["profile_custom"].window_size_samples == int(0.256 * 16000)
         assert config.vad_profiles["default"].threshold == 0.2
 
+    def test_from_dict_v2_should_apply_flat_subtitle_stream_overrides(self):
+        """测试v2结构中混用flat覆盖键时，字幕流合并参数覆盖生效"""
+        config = Config.from_dict_v2({
+            "runtime": {
+                "input_source": "microphone",
+                "model": {
+                    "active_profile_id": "default",
+                    "profiles": {
+                        "default": {
+                            "profile_id": "default",
+                            "profile_name": "默认",
+                            "model_path": "test_model.onnx"
+                        }
+                    }
+                }
+            },
+            "audio": {
+                "sample_rate": 16000,
+                "chunk_size": 1024,
+                "channels": 1
+            },
+            "vad": {
+                "active_profile_id": "default",
+                "profiles": {
+                    "default": {
+                        "profile_name": "默认",
+                        "profile_id": "default",
+                        "threshold": 0.3
+                    }
+                }
+            },
+            "subtitle": {
+                "file": {},
+                "display": {}
+            },
+            "stream_merge_target_duration": 12.5,
+            "stream_long_segment_threshold": 7.2,
+            "stream_merge_max_gap": 0.45,
+            "max_subtitle_duration": 4.0,
+        })
+
+        assert config.stream_merge_target_duration == 12.5
+        assert config.stream_long_segment_threshold == 7.2
+        assert config.stream_merge_max_gap == 0.45
+        assert config.max_subtitle_duration == 4.0
+
 
 class TestConfigManager:
     """ConfigManager类测试"""
@@ -161,7 +207,11 @@ class TestConfigManager:
                 "--chunk-size", "2048",
                 "--output-format", "json",
                 "--no-confidence",
-                "--no-timestamp"
+                "--no-timestamp",
+                "--stream-merge-target-duration", "12.0",
+                "--stream-long-segment-threshold", "7.0",
+                "--stream-merge-max-gap", "0.4",
+                "--max-subtitle-duration", "4.5",
             ])
 
             assert config.model_path == str(temp_model)
@@ -173,6 +223,10 @@ class TestConfigManager:
             assert config.output_format == "json"
             assert config.show_confidence == False
             assert config.show_timestamp == False
+            assert config.stream_merge_target_duration == 12.0
+            assert config.stream_long_segment_threshold == 7.0
+            assert config.stream_merge_max_gap == 0.4
+            assert config.max_subtitle_duration == 4.5
         finally:
             temp_model.unlink(missing_ok=True)
 
@@ -181,7 +235,7 @@ class TestConfigManager:
         manager = ConfigManager()
         config = manager.get_default_config()
 
-        assert config.input_source == "microphone"
+        assert config.input_source == ""
         assert config.use_gpu == True
         assert config.vad_sensitivity == 0.5
         assert config.sample_rate == 16000
@@ -230,6 +284,21 @@ class TestConfigManager:
             assert cli_dict["vad_window_size"] == 0.256
         finally:
             temp_model.unlink(missing_ok=True)
+
+    def test_cli_overrides_with_subtitle_stream_args_should_include_fields(self):
+        """测试显式传入字幕流参数时，应生成对应flat覆盖字段"""
+        manager = ConfigManager()
+        cli_dict = manager.parse_arguments_to_dict([
+            "--stream-merge-target-duration", "11.0",
+            "--stream-long-segment-threshold", "6.5",
+            "--stream-merge-max-gap", "0.35",
+            "--max-subtitle-duration", "4.2",
+        ])
+
+        assert cli_dict["stream_merge_target_duration"] == 11.0
+        assert cli_dict["stream_long_segment_threshold"] == 6.5
+        assert cli_dict["stream_merge_max_gap"] == 0.35
+        assert cli_dict["max_subtitle_duration"] == 4.2
 
 
 class TestAudioDevice:

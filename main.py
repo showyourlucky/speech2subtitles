@@ -306,7 +306,14 @@ def run_file_transcription(config):
     print("\n[初始化] 创建媒体处理器...")
     converter = MediaConverter(temp_dir="temp")
     subtitle_gen = SubtitleGenerator(encoding='utf-8')
-    processor = BatchProcessor(converter, subtitle_gen)
+    processor = BatchProcessor(
+        converter,
+        subtitle_gen,
+        stream_merge_target_duration=config.stream_merge_target_duration,
+        stream_long_segment_threshold=config.stream_long_segment_threshold,
+        stream_merge_max_gap=config.stream_merge_max_gap,
+        max_subtitle_duration=config.max_subtitle_duration,
+    )
     print("  ✓ 媒体处理器初始化完成")
 
     # 步骤3: 初始化转录引擎和VAD

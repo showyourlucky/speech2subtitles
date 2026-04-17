@@ -175,6 +175,30 @@ class ConfigManager:
             action="store_true",
             help="显示详细处理过程"
         )
+        subtitle.add_argument(
+            "--stream-merge-target-duration",
+            type=float,
+            metavar="FLOAT",
+            help="短语音段合并目标时长，单位秒 (默认: 15.0)"
+        )
+        subtitle.add_argument(
+            "--stream-long-segment-threshold",
+            type=float,
+            metavar="FLOAT",
+            help="长语音段阈值，超过后单独解码，单位秒 (默认: 8.0)"
+        )
+        subtitle.add_argument(
+            "--stream-merge-max-gap",
+            type=float,
+            metavar="FLOAT",
+            help="允许合并的最大静音间隔，单位秒 (默认: 0.6)"
+        )
+        subtitle.add_argument(
+            "--max-subtitle-duration",
+            type=float,
+            metavar="FLOAT",
+            help="单条字幕最大时长，单位秒 (默认: 5.0)"
+        )
 
         # 字幕显示参数 (实时转录模式)
         subtitle_display = parser.add_argument_group("字幕显示参数 (--input-source模式)")
@@ -364,6 +388,14 @@ class ConfigManager:
             cli_dict["keep_temp"] = parsed_args.keep_temp
         if is_explicit("--verbose"):
             cli_dict["verbose"] = parsed_args.verbose
+        if is_explicit("--stream-merge-target-duration"):
+            cli_dict["stream_merge_target_duration"] = parsed_args.stream_merge_target_duration
+        if is_explicit("--stream-long-segment-threshold"):
+            cli_dict["stream_long_segment_threshold"] = parsed_args.stream_long_segment_threshold
+        if is_explicit("--stream-merge-max-gap"):
+            cli_dict["stream_merge_max_gap"] = parsed_args.stream_merge_max_gap
+        if is_explicit("--max-subtitle-duration"):
+            cli_dict["max_subtitle_duration"] = parsed_args.max_subtitle_duration
 
         # 字幕显示参数（部分更新）
         subtitle_display_updates: Dict[str, Any] = {}
@@ -475,6 +507,10 @@ class ConfigManager:
             print(f"  字幕格式: {config.subtitle_format.upper()}")
             print(f"  保留临时文件: {'是' if config.keep_temp else '否'}")
             print(f"  详细模式: {'是' if config.verbose else '否'}")
+            print(f"  合并目标时长: {config.stream_merge_target_duration:.2f}s")
+            print(f"  长段阈值: {config.stream_long_segment_threshold:.2f}s")
+            print(f"  合并最大间隔: {config.stream_merge_max_gap:.2f}s")
+            print(f"  字幕最大时长: {config.max_subtitle_duration:.2f}s")
 
         print(f"  GPU加速: {'启用' if config.use_gpu else '禁用'}")
         print(f"  VAD敏感度: {config.vad_sensitivity}")

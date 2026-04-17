@@ -152,6 +152,22 @@ class ConfigLoader:
 
         if env.get("S2S_VERBOSE"):
             set_path("subtitle.file.verbose", _parse_bool(env.get("S2S_VERBOSE")))
+        if env.get("S2S_STREAM_MERGE_TARGET_DURATION"):
+            parsed = _parse_float(env.get("S2S_STREAM_MERGE_TARGET_DURATION"))
+            if parsed is not None:
+                set_path("subtitle.file.stream_merge_target_duration", parsed)
+        if env.get("S2S_STREAM_LONG_SEGMENT_THRESHOLD"):
+            parsed = _parse_float(env.get("S2S_STREAM_LONG_SEGMENT_THRESHOLD"))
+            if parsed is not None:
+                set_path("subtitle.file.stream_long_segment_threshold", parsed)
+        if env.get("S2S_STREAM_MERGE_MAX_GAP"):
+            parsed = _parse_float(env.get("S2S_STREAM_MERGE_MAX_GAP"))
+            if parsed is not None:
+                set_path("subtitle.file.stream_merge_max_gap", parsed)
+        if env.get("S2S_MAX_SUBTITLE_DURATION"):
+            parsed = _parse_float(env.get("S2S_MAX_SUBTITLE_DURATION"))
+            if parsed is not None:
+                set_path("subtitle.file.max_subtitle_duration", parsed)
 
         if env.get("S2S_SUBTITLE_ENABLED"):
             set_path("subtitle.display.enabled", _parse_bool(env.get("S2S_SUBTITLE_ENABLED")))

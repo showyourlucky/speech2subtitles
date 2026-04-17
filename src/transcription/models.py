@@ -15,10 +15,10 @@ Created: 2025-09-28
 """
 
 # 标准库导入
-from dataclasses import dataclass, field  # 数据类装饰器和字段定义
-from typing import List, Optional, Dict, Any  # 类型提示支持
-from enum import Enum  # 枚举类型支持
 import time  # 时间处理函数
+from dataclasses import dataclass, field  # 数据类装饰器和字段定义
+from enum import Enum  # 枚举类型支持
+from typing import Any  # 类型提示支持
 
 
 class TranscriptionModel(Enum):
@@ -33,7 +33,7 @@ class TranscriptionModel(Enum):
     SHERPA_ONNX_STREAMING = "sherpa_onnx_streaming"  # sherpa-onnx流式模型
     SHERPA_ONNX_OFFLINE = "sherpa_onnx_offline"      # sherpa-onnx离线模型
     SENSE_VOICE = "sense_voice"                      # sense-voice模型
-    QWEN_ARS = "qwen_ars"
+    QWEN_ASR = "qwen_asr"
 
 
 class ProcessorType(Enum):
@@ -98,10 +98,10 @@ class TranscriptionConfig:
     blank_penalty: float = 0.0
     temperature: float = 1.0
 
-    # 下面为qwen3-ars参数
-    hotwords: str = ""              # 可选逗号分隔热词短语    
-    num_threads: int = 2            # qwen3-ars推理线程数
-    feature_dim: int = 128          # qwen3-ars特征维度
+    # 下面为qwen3_asr参数
+    hotwords: str = ""              # 可选逗号分隔热词短语
+    num_threads: int = 2            # qwen3-asr推理线程数
+    feature_dim: int = 128          # qwen3-asr特征维度
     seed: int = 48                  # 随机seed
     top_p: float = 0.8
     max_new_tokens: int = 128
@@ -160,7 +160,7 @@ class TranscriptionConfig:
         ]
 
     @property
-    def device_config(self) -> Dict[str, Any]:
+    def device_config(self) -> dict[str, Any]:
         """
         生成ONNX运行时的设备配置
 
@@ -196,12 +196,12 @@ class TranscriptionResult:
     text: str
     confidence: float
     start_time: float
-    end_time: Optional[float] = None
-    duration_ms: Optional[float] = None
-    language: Optional[str] = None
+    end_time: float | None = None
+    duration_ms: float | None = None
+    language: str | None = None
     is_final: bool = False
     is_partial: bool = False
-    word_timestamps: List[Dict[str, Any]] = field(default_factory=list)
+    word_timestamps: list[dict[str, Any]] = field(default_factory=list)
     processing_time_ms: float = 0.0
     timestamp: float = field(default_factory=time.time)
 
@@ -286,7 +286,7 @@ class TranscriptionResult:
             "confidence": confidence
         })
 
-    def finalize(self, end_time: Optional[float] = None) -> None:
+    def finalize(self, end_time: float | None = None) -> None:
         """
         终结转录结果
 
@@ -306,7 +306,7 @@ class TranscriptionResult:
 @dataclass
 class BatchTranscriptionResult:
     """Result for batch transcription"""
-    results: List[TranscriptionResult] = field(default_factory=list)
+    results: list[TranscriptionResult] = field(default_factory=list)
     total_duration_ms: float = 0.0
     total_processing_time_ms: float = 0.0
     average_confidence: float = 0.0
@@ -386,7 +386,7 @@ class ModelInfo:
     load_time_ms: float = 0.0
     memory_usage_mb: float = 0.0
     supports_streaming: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def model_name(self) -> str:

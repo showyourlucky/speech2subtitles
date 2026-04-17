@@ -1,0 +1,199 @@
+{
+  "version": "2.0",
+  "last_modified": "2026-04-16T17:24:40.712885",
+  "config": {
+    "runtime": {
+      "input_source": "",
+      "input_file": "test3.aac",
+      "use_gpu": true,
+      "transcription_language": null,
+      "model": {
+        "active_profile_id": "model_15b28de5",
+        "profiles": {
+          "default": {
+            "profile_id": "default",
+            "profile_name": "sense25",
+            "model_path": "L:/voice/models/sherpa-onnx-sense-voice-funasr-nano-2025-12-17/model.onnx",
+            "model_type": "sense_voice",
+            "description": "系统默认模型配置",
+            "supported_languages": [
+              "zh",
+              "en",
+              "ja",
+              "ko",
+              "yue"
+            ],
+            "created_at": "2025-11-15T02:18:59.681118",
+            "updated_at": "2026-04-07T02:35:22.860826"
+          },
+          "model_15b28de5": {
+            "profile_id": "model_15b28de5",
+            "profile_name": "sense24",
+            "model_path": "L:/voice/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx",
+            "model_type": "sense_voice",
+            "description": "系统默认模型配置",
+            "supported_languages": [
+              "zh",
+              "en",
+              "ja",
+              "ko",
+              "yue"
+            ],
+            "created_at": "2025-11-15T02:20:54.592223",
+            "updated_at": "2025-11-15T04:29:33.765778"
+          },
+          "model_qwen3_asr_06b": {
+            "profile_id": "model_qwen3_asr_06b",
+            "profile_name": "qwen3_asr-0.6B-int8",
+            "model_path": "F:/py/speech2subtitles/models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+            "model_type": "qwen_asr",
+            "description": "qwen3_asr离线模型配置",
+            "supported_languages": [
+              "zh",
+              "en"
+            ],
+            "created_at": "2026-04-16T00:00:00",
+            "updated_at": "2026-04-16T17:24:40.711888",
+            "hotwords": "",
+            "num_threads": 4,
+            "feature_dim": 128,
+            "max_total_len": 512,
+            "max_new_tokens": 128,
+            "temperature": 1.0,
+            "top_p": 0.8,
+            "seed": 48
+          }
+        }
+      }
+    },
+    "audio": {
+      "sample_rate": 16000,
+      "chunk_size": 1024,
+      "channels": 1,
+      "device_id": null
+    },
+    "vad": {
+      "active_profile_id": "default",
+      "profiles": {
+        "default": {
+          "profile_name": "默认",
+          "profile_id": "profile_默认",
+          "threshold": 0.5,
+          "min_speech_duration_ms": 100.0,
+          "min_silence_duration_ms": 250.0,
+          "max_speech_duration_ms": 5000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": null,
+          "use_sherpa_onnx": true,
+          "window_size_samples": 512
+        },
+        "profile_22": {
+          "profile_name": "长句",
+          "profile_id": "profile_22",
+          "threshold": 0.5,
+          "min_speech_duration_ms": 100.0,
+          "min_silence_duration_ms": 1000.0,
+          "max_speech_duration_ms": 30000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": "F:/py/speech2subtitles/models/silero_vad/silero_vad.onnx",
+          "use_sherpa_onnx": true,
+          "window_size_samples": 8192
+        },
+        "profile_ten-vad": {
+          "profile_name": "ten-vad",
+          "profile_id": "profile_ten-vad",
+          "threshold": 0.5,
+          "min_speech_duration_ms": 100.0,
+          "min_silence_duration_ms": 150.0,
+          "max_speech_duration_ms": 30000.0,
+          "sample_rate": 16000,
+          "model": "ten_vad",
+          "model_path": "F:/py/speech2subtitles/models/ten_vad/ten-vad.onnx",
+          "use_sherpa_onnx": true,
+          "window_size_samples": 2048
+        },
+        "meeting_fast": {
+          "profile_name": "会议低延迟",
+          "profile_id": "meeting_fast",
+          "threshold": 0.45,
+          "min_speech_duration_ms": 100.0,
+          "min_silence_duration_ms": 120.0,
+          "max_speech_duration_ms": 15000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": null,
+          "use_sherpa_onnx": true,
+          "window_size_samples": 512
+        },
+        "browser_realtime": {
+          "profile_name": "浏览器实时分段",
+          "profile_id": "browser_realtime",
+          "threshold": 0.7,
+          "min_speech_duration_ms": 100.0,
+          "min_silence_duration_ms": 200.0,
+          "max_speech_duration_ms": 3000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": null,
+          "use_sherpa_onnx": true,
+          "window_size_samples": 512
+        },
+        "noisy_env": {
+          "profile_name": "嘈杂环境",
+          "profile_id": "noisy_env",
+          "threshold": 0.65,
+          "min_speech_duration_ms": 180.0,
+          "min_silence_duration_ms": 260.0,
+          "max_speech_duration_ms": 30000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": null,
+          "use_sherpa_onnx": true,
+          "window_size_samples": 512
+        },
+        "quiet_sensitive": {
+          "profile_name": "安静环境高灵敏",
+          "profile_id": "quiet_sensitive",
+          "threshold": 0.35,
+          "min_speech_duration_ms": 80.0,
+          "min_silence_duration_ms": 140.0,
+          "max_speech_duration_ms": 20000.0,
+          "sample_rate": 16000,
+          "model": "silero_vad",
+          "model_path": null,
+          "use_sherpa_onnx": true,
+          "window_size_samples": 512
+        }
+      }
+    },
+    "output": {
+      "format": "text",
+      "show_confidence": false,
+      "show_timestamp": true
+    },
+    "subtitle": {
+      "file": {
+        "output_dir": null,
+        "format": "srt",
+        "keep_temp": false,
+        "verbose": false,
+        "stream_merge_target_duration": 12.0,
+        "stream_long_segment_threshold": 7.0,
+        "stream_merge_max_gap": 0.6,
+        "max_subtitle_duration": 5.0
+      },
+      "display": {
+        "enabled": true,
+        "position": "bottom",
+        "font_size": 24,
+        "font_family": "Microsoft YaHei",
+        "opacity": 0.8,
+        "max_display_time": 5.0,
+        "text_color": "#FFFFFF",
+        "background_color": "#000000"
+      }
+    }
+  }
+}

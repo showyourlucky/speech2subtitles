@@ -84,7 +84,14 @@ class TranscriptionWorker(QThread):
             # 初始化组件
             converter = MediaConverter()
             subtitle_gen = SubtitleGenerator()
-            processor = BatchProcessor(converter, subtitle_gen)
+            processor = BatchProcessor(
+                converter,
+                subtitle_gen,
+                stream_merge_target_duration=self.config.stream_merge_target_duration,
+                stream_long_segment_threshold=self.config.stream_long_segment_threshold,
+                stream_merge_max_gap=self.config.stream_merge_max_gap,
+                max_subtitle_duration=self.config.max_subtitle_duration,
+            )
 
             # 1. 创建VAD配置并通过VadManager获取检测器实例(智能复用)
             vad_config = VadConfig(
