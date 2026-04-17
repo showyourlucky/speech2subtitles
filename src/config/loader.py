@@ -152,6 +152,11 @@ class ConfigLoader:
 
         if env.get("S2S_VERBOSE"):
             set_path("subtitle.file.verbose", _parse_bool(env.get("S2S_VERBOSE")))
+        if env.get("S2S_TRANSCRIBE_PER_VAD_SEGMENT"):
+            set_path(
+                "subtitle.file.transcribe_per_vad_segment",
+                _parse_bool(env.get("S2S_TRANSCRIBE_PER_VAD_SEGMENT")),
+            )
         if env.get("S2S_STREAM_MERGE_TARGET_DURATION"):
             parsed = _parse_float(env.get("S2S_STREAM_MERGE_TARGET_DURATION"))
             if parsed is not None:

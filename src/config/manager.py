@@ -176,6 +176,15 @@ class ConfigManager:
             help="显示详细处理过程"
         )
         subtitle.add_argument(
+            "--transcribe-per-vad-segment",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help=(
+                "是否逐VAD片段独立识别 (默认: true); "
+                "使用 --no-transcribe-per-vad-segment 启用拼接识别以提升速度"
+            ),
+        )
+        subtitle.add_argument(
             "--stream-merge-target-duration",
             type=float,
             metavar="FLOAT",
@@ -388,6 +397,13 @@ class ConfigManager:
             cli_dict["keep_temp"] = parsed_args.keep_temp
         if is_explicit("--verbose"):
             cli_dict["verbose"] = parsed_args.verbose
+        if (
+            is_explicit("--transcribe-per-vad-segment")
+            or is_explicit("--no-transcribe-per-vad-segment")
+        ):
+            cli_dict["transcribe_per_vad_segment"] = bool(
+                parsed_args.transcribe_per_vad_segment
+            )
         if is_explicit("--stream-merge-target-duration"):
             cli_dict["stream_merge_target_duration"] = parsed_args.stream_merge_target_duration
         if is_explicit("--stream-long-segment-threshold"):
@@ -507,6 +523,7 @@ class ConfigManager:
             print(f"  字幕格式: {config.subtitle_format.upper()}")
             print(f"  保留临时文件: {'是' if config.keep_temp else '否'}")
             print(f"  详细模式: {'是' if config.verbose else '否'}")
+            print(f"  逐VAD片段识别: {'是' if config.transcribe_per_vad_segment else '否(使用拼接识别)'}")
             print(f"  合并目标时长: {config.stream_merge_target_duration:.2f}s")
             print(f"  长段阈值: {config.stream_long_segment_threshold:.2f}s")
             print(f"  合并最大间隔: {config.stream_merge_max_gap:.2f}s")

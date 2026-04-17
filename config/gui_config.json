@@ -179,6 +179,7 @@
         "format": "srt",
         "keep_temp": false,
         "verbose": false,
+        "transcribe_per_vad_segment": false,
         "stream_merge_target_duration": 12.0,
         "stream_long_segment_threshold": 7.0,
         "stream_merge_max_gap": 0.6,

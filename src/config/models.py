@@ -64,6 +64,7 @@ class SubtitleConstants:
     DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD: float = 8.0
     DEFAULT_STREAM_MERGE_MAX_GAP: float = 0.6
     DEFAULT_MAX_SUBTITLE_DURATION: float = 5.0
+    DEFAULT_TRANSCRIBE_PER_VAD_SEGMENT: bool = True
 
 
 class SubtitleDisplayConstants:
@@ -438,6 +439,7 @@ class SubtitleConfigSettings:
     subtitle_format: str = SubtitleConstants.DEFAULT_FORMAT
     keep_temp: bool = False
     verbose: bool = False
+    transcribe_per_vad_segment: bool = SubtitleConstants.DEFAULT_TRANSCRIBE_PER_VAD_SEGMENT
     # 离线文件模式下的 stream 合并和字幕切分策略
     stream_merge_target_duration: float = SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION
     stream_long_segment_threshold: float = SubtitleConstants.DEFAULT_STREAM_LONG_SEGMENT_THRESHOLD
@@ -627,6 +629,14 @@ class Config:
     @verbose.setter
     def verbose(self, value: bool) -> None:
         self.subtitle.verbose = value
+
+    @property
+    def transcribe_per_vad_segment(self) -> bool:
+        return self.subtitle.transcribe_per_vad_segment
+
+    @transcribe_per_vad_segment.setter
+    def transcribe_per_vad_segment(self, value: bool) -> None:
+        self.subtitle.transcribe_per_vad_segment = value
 
     @property
     def stream_merge_target_duration(self) -> float:
@@ -894,6 +904,10 @@ class Config:
             raise ValueError(f"stream_merge_max_gap 不能小于0: {self.stream_merge_max_gap}")
         if self.max_subtitle_duration <= 0:
             raise ValueError(f"max_subtitle_duration 必须大于0: {self.max_subtitle_duration}")
+        if not isinstance(self.transcribe_per_vad_segment, bool):
+            raise ValueError(
+                f"transcribe_per_vad_segment 必须为布尔值: {self.transcribe_per_vad_segment}"
+            )
 
         # 确保默认方案
         self._ensure_default_profiles()
@@ -989,6 +1003,7 @@ class Config:
                     "format": self.subtitle_format,
                     "keep_temp": self.keep_temp,
                     "verbose": self.verbose,
+                    "transcribe_per_vad_segment": self.transcribe_per_vad_segment,
                     "stream_merge_target_duration": self.stream_merge_target_duration,
                     "stream_long_segment_threshold": self.stream_long_segment_threshold,
                     "stream_merge_max_gap": self.stream_merge_max_gap,
@@ -1093,6 +1108,10 @@ class Config:
                 subtitle_format=subtitle_dict.get("file", {}).get("format", "srt"),
                 keep_temp=subtitle_dict.get("file", {}).get("keep_temp", False),
                 verbose=subtitle_dict.get("file", {}).get("verbose", False),
+                transcribe_per_vad_segment=subtitle_dict.get("file", {}).get(
+                    "transcribe_per_vad_segment",
+                    SubtitleConstants.DEFAULT_TRANSCRIBE_PER_VAD_SEGMENT,
+                ),
                 stream_merge_target_duration=subtitle_dict.get("file", {}).get(
                     "stream_merge_target_duration",
                     SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION,
@@ -1164,6 +1183,8 @@ class Config:
             config.keep_temp = config_dict.get("keep_temp")
         if "verbose" in config_dict:
             config.verbose = config_dict.get("verbose")
+        if "transcribe_per_vad_segment" in config_dict and config_dict.get("transcribe_per_vad_segment") is not None:
+            config.transcribe_per_vad_segment = config_dict.get("transcribe_per_vad_segment")
         if "stream_merge_target_duration" in config_dict and config_dict.get("stream_merge_target_duration") is not None:
             config.stream_merge_target_duration = config_dict.get("stream_merge_target_duration")
         if "stream_long_segment_threshold" in config_dict and config_dict.get("stream_long_segment_threshold") is not None:
@@ -1265,6 +1286,10 @@ class Config:
                 subtitle_format=config_dict.get("subtitle_format", "srt"),
                 keep_temp=config_dict.get("keep_temp", False),
                 verbose=config_dict.get("verbose", False),
+                transcribe_per_vad_segment=config_dict.get(
+                    "transcribe_per_vad_segment",
+                    SubtitleConstants.DEFAULT_TRANSCRIBE_PER_VAD_SEGMENT,
+                ),
                 stream_merge_target_duration=config_dict.get(
                     "stream_merge_target_duration",
                     SubtitleConstants.DEFAULT_STREAM_MERGE_TARGET_DURATION,

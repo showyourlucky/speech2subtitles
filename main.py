@@ -309,6 +309,7 @@ def run_file_transcription(config):
     processor = BatchProcessor(
         converter,
         subtitle_gen,
+        transcribe_per_vad_segment=config.transcribe_per_vad_segment,
         stream_merge_target_duration=config.stream_merge_target_duration,
         stream_long_segment_threshold=config.stream_long_segment_threshold,
         stream_merge_max_gap=config.stream_merge_max_gap,

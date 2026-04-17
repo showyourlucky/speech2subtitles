@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from config.manager import ConfigManager
 from config.models import Config, AudioDevice
+from config.loader import ConfigLoader
 
 
 class TestConfig:
@@ -157,16 +158,59 @@ class TestConfig:
                 "file": {},
                 "display": {}
             },
+            "transcribe_per_vad_segment": False,
             "stream_merge_target_duration": 12.5,
             "stream_long_segment_threshold": 7.2,
             "stream_merge_max_gap": 0.45,
             "max_subtitle_duration": 4.0,
         })
 
+        assert config.transcribe_per_vad_segment is False
         assert config.stream_merge_target_duration == 12.5
         assert config.stream_long_segment_threshold == 7.2
         assert config.stream_merge_max_gap == 0.45
         assert config.max_subtitle_duration == 4.0
+
+    def test_from_dict_v2_should_read_transcribe_per_vad_segment_from_subtitle_file(self):
+        """测试可从subtitle.file分区读取逐VAD片段识别参数"""
+        config = Config.from_dict_v2({
+            "runtime": {
+                "input_source": "microphone",
+                "model": {
+                    "active_profile_id": "default",
+                    "profiles": {
+                        "default": {
+                            "profile_id": "default",
+                            "profile_name": "默认",
+                            "model_path": "test_model.onnx"
+                        }
+                    }
+                }
+            },
+            "audio": {
+                "sample_rate": 16000,
+                "chunk_size": 1024,
+                "channels": 1
+            },
+            "vad": {
+                "active_profile_id": "default",
+                "profiles": {
+                    "default": {
+                        "profile_name": "默认",
+                        "profile_id": "default",
+                        "threshold": 0.3
+                    }
+                }
+            },
+            "subtitle": {
+                "file": {
+                    "transcribe_per_vad_segment": False
+                },
+                "display": {}
+            },
+        })
+
+        assert config.transcribe_per_vad_segment is False
 
 
 class TestConfigManager:
@@ -208,6 +252,7 @@ class TestConfigManager:
                 "--output-format", "json",
                 "--no-confidence",
                 "--no-timestamp",
+                "--no-transcribe-per-vad-segment",
                 "--stream-merge-target-duration", "12.0",
                 "--stream-long-segment-threshold", "7.0",
                 "--stream-merge-max-gap", "0.4",
@@ -223,6 +268,7 @@ class TestConfigManager:
             assert config.output_format == "json"
             assert config.show_confidence == False
             assert config.show_timestamp == False
+            assert config.transcribe_per_vad_segment is False
             assert config.stream_merge_target_duration == 12.0
             assert config.stream_long_segment_threshold == 7.0
             assert config.stream_merge_max_gap == 0.4
@@ -240,6 +286,7 @@ class TestConfigManager:
         assert config.vad_sensitivity == 0.5
         assert config.sample_rate == 16000
         assert config.output_format == "text"
+        assert config.transcribe_per_vad_segment is True
 
     def test_parse_cli_overrides_without_explicit_args_returns_empty_dict(self):
         """测试未显式传参时，不生成任何CLI覆盖字段"""
@@ -289,16 +336,31 @@ class TestConfigManager:
         """测试显式传入字幕流参数时，应生成对应flat覆盖字段"""
         manager = ConfigManager()
         cli_dict = manager.parse_arguments_to_dict([
+            "--no-transcribe-per-vad-segment",
             "--stream-merge-target-duration", "11.0",
             "--stream-long-segment-threshold", "6.5",
             "--stream-merge-max-gap", "0.35",
             "--max-subtitle-duration", "4.2",
         ])
 
+        assert cli_dict["transcribe_per_vad_segment"] is False
         assert cli_dict["stream_merge_target_duration"] == 11.0
         assert cli_dict["stream_long_segment_threshold"] == 6.5
         assert cli_dict["stream_merge_max_gap"] == 0.35
         assert cli_dict["max_subtitle_duration"] == 4.2
+
+
+class TestConfigLoader:
+    """ConfigLoader类测试"""
+
+    def test_load_env_should_parse_transcribe_per_vad_segment(self):
+        """测试环境变量可解析逐VAD片段识别参数"""
+        loader = ConfigLoader()
+        env_overrides = loader._load_env({
+            "S2S_TRANSCRIBE_PER_VAD_SEGMENT": "false"
+        })
+
+        assert env_overrides["subtitle"]["file"]["transcribe_per_vad_segment"] is False
 
 
 class TestAudioDevice:

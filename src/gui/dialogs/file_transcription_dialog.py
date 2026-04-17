@@ -87,6 +87,7 @@ class TranscriptionWorker(QThread):
             processor = BatchProcessor(
                 converter,
                 subtitle_gen,
+                transcribe_per_vad_segment=self.config.transcribe_per_vad_segment,
                 stream_merge_target_duration=self.config.stream_merge_target_duration,
                 stream_long_segment_threshold=self.config.stream_long_segment_threshold,
                 stream_merge_max_gap=self.config.stream_merge_max_gap,
