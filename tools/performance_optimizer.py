@@ -5,21 +5,20 @@
 自动分析系统性能瓶颈并提供优化建议和自动优化功能
 """
 
-import time
-import psutil
-import logging
 import json
-import sys
 import os
-from typing import Dict, List, Any, Optional
+import sys
+import time
 from pathlib import Path
-import subprocess
+from typing import Any
+
+import psutil
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import setup_logging, get_logger, LogConfig, LogLevel
+from src.utils.logger import LogConfig, LogLevel, get_logger, setup_logging
 
 # 配置日志
 setup_logging(LogConfig(level=LogLevel.INFO))
@@ -32,7 +31,7 @@ class PerformanceOptimizer:
         self.optimization_results = {}
         self.recommendations = []
 
-    def analyze_system_performance(self) -> Dict[str, Any]:
+    def analyze_system_performance(self) -> dict[str, Any]:
         """分析系统性能"""
         logger.info("开始系统性能分析...")
 
@@ -50,7 +49,7 @@ class PerformanceOptimizer:
 
         return analysis
 
-    def _analyze_cpu(self) -> Dict[str, Any]:
+    def _analyze_cpu(self) -> dict[str, Any]:
         """分析CPU性能"""
         logger.info("分析CPU性能...")
 
@@ -75,7 +74,7 @@ class PerformanceOptimizer:
 
         return cpu_info
 
-    def _analyze_memory(self) -> Dict[str, Any]:
+    def _analyze_memory(self) -> dict[str, Any]:
         """分析内存性能"""
         logger.info("分析内存性能...")
 
@@ -97,7 +96,7 @@ class PerformanceOptimizer:
 
         return memory_info
 
-    def _analyze_gpu(self) -> Dict[str, Any]:
+    def _analyze_gpu(self) -> dict[str, Any]:
         """分析GPU性能"""
         logger.info("分析GPU性能...")
 
@@ -143,7 +142,7 @@ class PerformanceOptimizer:
 
         return gpu_info
 
-    def _analyze_disk(self) -> Dict[str, Any]:
+    def _analyze_disk(self) -> dict[str, Any]:
         """分析磁盘性能"""
         logger.info("分析磁盘性能...")
 
@@ -176,7 +175,7 @@ class PerformanceOptimizer:
 
         return disk_info
 
-    def _analyze_processes(self) -> Dict[str, Any]:
+    def _analyze_processes(self) -> dict[str, Any]:
         """分析进程性能"""
         logger.info("分析进程性能...")
 
@@ -210,7 +209,7 @@ class PerformanceOptimizer:
 
         return process_info
 
-    def _evaluate_cpu_performance(self, cpu_info: Dict[str, Any]) -> str:
+    def _evaluate_cpu_performance(self, cpu_info: dict[str, Any]) -> str:
         """评估CPU性能级别"""
         avg_usage = cpu_info['avg_usage']
         cpu_count = cpu_info['count']
@@ -224,7 +223,7 @@ class PerformanceOptimizer:
         else:
             return 'excellent'
 
-    def _evaluate_memory_performance(self, memory_info: Dict[str, Any]) -> str:
+    def _evaluate_memory_performance(self, memory_info: dict[str, Any]) -> str:
         """评估内存性能级别"""
         memory_percent = memory_info['percent']
         total_gb = memory_info['total_gb']
@@ -240,7 +239,7 @@ class PerformanceOptimizer:
         else:
             return 'excellent'
 
-    def _evaluate_gpu_performance(self, gpu_info: Dict[str, Any]) -> str:
+    def _evaluate_gpu_performance(self, gpu_info: dict[str, Any]) -> str:
         """评估GPU性能级别"""
         if not gpu_info['cuda_available']:
             return 'no_gpu'
@@ -262,7 +261,7 @@ class PerformanceOptimizer:
         else:
             return 'excellent'
 
-    def _evaluate_disk_performance(self, disk_info: Dict[str, Any]) -> str:
+    def _evaluate_disk_performance(self, disk_info: dict[str, Any]) -> str:
         """评估磁盘性能级别"""
         if 'error' in disk_info:
             return 'unknown'
@@ -279,7 +278,7 @@ class PerformanceOptimizer:
         else:
             return 'good'
 
-    def _generate_recommendations(self, analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_recommendations(self, analysis: dict[str, Any]) -> list[dict[str, Any]]:
         """生成优化建议"""
         logger.info("生成优化建议...")
 
@@ -380,7 +379,7 @@ class PerformanceOptimizer:
 
         return recommendations
 
-    def apply_automatic_optimizations(self) -> Dict[str, Any]:
+    def apply_automatic_optimizations(self) -> dict[str, Any]:
         """应用自动优化"""
         logger.info("应用自动优化...")
 
@@ -393,7 +392,7 @@ class PerformanceOptimizer:
 
         return optimizations
 
-    def _optimize_environment_variables(self) -> Dict[str, Any]:
+    def _optimize_environment_variables(self) -> dict[str, Any]:
         """优化环境变量"""
         logger.info("优化环境变量...")
 
@@ -427,7 +426,7 @@ class PerformanceOptimizer:
         logger.info(f"环境变量优化完成: {optimizations}")
         return optimizations
 
-    def _optimize_system_settings(self) -> Dict[str, Any]:
+    def _optimize_system_settings(self) -> dict[str, Any]:
         """优化系统设置"""
         logger.info("优化系统设置...")
 
@@ -455,7 +454,7 @@ class PerformanceOptimizer:
 
         return optimizations
 
-    def _optimize_project_settings(self) -> Dict[str, Any]:
+    def _optimize_project_settings(self) -> dict[str, Any]:
         """优化项目设置"""
         logger.info("优化项目设置...")
 
@@ -479,7 +478,7 @@ class PerformanceOptimizer:
                 'channels': 1
             },
             'vad': {
-                'sensitivity': 0.6,  # 平衡敏感度
+                'threshold': 0.6,  # 平衡敏感度
                 'min_speech_duration_ms': 250,
                 'min_silence_duration_ms': 100
             },
@@ -499,7 +498,7 @@ class PerformanceOptimizer:
 
         return optimizations
 
-    def _perform_cleanup(self) -> Dict[str, Any]:
+    def _perform_cleanup(self) -> dict[str, Any]:
         """执行清理操作"""
         logger.info("执行清理操作...")
 
@@ -586,7 +585,7 @@ class PerformanceOptimizer:
         except Exception as e:
             logger.warning(f"清理日志失败: {e}")
 
-    def generate_optimization_report(self, analysis: Dict[str, Any], optimizations: Dict[str, Any]):
+    def generate_optimization_report(self, analysis: dict[str, Any], optimizations: dict[str, Any]):
         """生成优化报告"""
         logger.info("生成优化报告...")
 

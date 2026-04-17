@@ -769,7 +769,7 @@ for event_type in EventType:
 
 ### Q3: 转录准确率低怎么优化？
 **A**:
-- 调整VAD敏感度参数 (`vad_threshold`)
+- 调整VAD阈值参数 (`vad_threshold`)
 - 优化音频质量（降噪、增益）
 - 检查采样率配置是否匹配模型要求
 - 尝试不同的模型文件

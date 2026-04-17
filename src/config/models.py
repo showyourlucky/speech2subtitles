@@ -26,9 +26,6 @@ class AudioConstants:
 
 class VadConstants:
     """VAD相关常量"""
-    MIN_SENSITIVITY: float = 0.0
-    MAX_SENSITIVITY: float = 1.0
-    DEFAULT_SENSITIVITY: float = 0.5
     MIN_THRESHOLD: float = 0.0
     MAX_THRESHOLD: float = 1.0
     DEFAULT_THRESHOLD: float = 0.5
@@ -701,15 +698,6 @@ class Config:
         window_samples = max(1, int(value * max(1, self.sample_rate)))
         profile.window_size_samples = window_samples
 
-    @property
-    def vad_sensitivity(self) -> float:
-        # 兼容字段，等价映射到阈值
-        return self.vad_threshold
-
-    @vad_sensitivity.setter
-    def vad_sensitivity(self, value: float) -> None:
-        self.vad_threshold = value
-
     # ===== 行为方法 =====
     def is_realtime_mode(self) -> bool:
         """判断是否为实时转录模式（麦克风或系统音频）"""
@@ -1163,8 +1151,6 @@ class Config:
 
         if "vad_threshold" in config_dict and config_dict.get("vad_threshold") is not None:
             config.vad_threshold = config_dict.get("vad_threshold")
-        elif "vad_sensitivity" in config_dict and config_dict.get("vad_sensitivity") is not None:
-            config.vad_sensitivity = config_dict.get("vad_sensitivity")
         if "vad_window_size" in config_dict and config_dict.get("vad_window_size") is not None:
             config.vad_window_size = config_dict.get("vad_window_size")
 

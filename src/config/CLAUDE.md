@@ -90,7 +90,7 @@
 - `model_path -> runtime.model.profiles[active].model_path`
 - `input_source -> runtime.input_source`
 - `use_gpu -> runtime.use_gpu`
-- `vad_threshold / vad_sensitivity -> active vad profile.threshold`
+- `vad_threshold -> active vad profile.threshold`
 - `output_format -> output.format`
 - `subtitle_format -> subtitle.file.format`
 
@@ -104,7 +104,7 @@
 - 运行参数：`--model-path`、`--input-source`、`--input-file`
 - 通用参数：`--no-gpu`、`--transcription-language`
 - 音频参数：`--sample-rate`、`--chunk-size`、`--device-id`
-- VAD 参数：`--vad-sensitivity`、`--vad-threshold`、`--vad-window-size`
+- VAD 参数：`--vad-threshold`、`--vad-window-size`
 - 输出参数：`--output-format`、`--no-confidence`、`--no-timestamp`
 - 字幕文件参数：`--output-dir`、`--subtitle-format`、`--keep-temp`、`--verbose`
 - 字幕显示参数：`--show-subtitles`、`--subtitle-position`、`--subtitle-font-size`、`--subtitle-font-family`、`--subtitle-opacity`、`--subtitle-max-display-time`、`--subtitle-text-color`、`--subtitle-bg-color`

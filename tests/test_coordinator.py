@@ -65,7 +65,7 @@ except ImportError:
         enable_gpu: bool = True
         enable_vad: bool = True
         auto_restart_on_error: bool = True
-        vad_sensitivity: float = 0.5
+        vad_threshold: float = 0.5
         chunk_duration: float = 1.0
 
         def __post_init__(self):
@@ -73,8 +73,8 @@ except ImportError:
                 raise ValueError("队列大小必须大于0")
             if self.processing_timeout <= 0:
                 raise ValueError("处理超时必须大于0")
-            if not 0.0 <= self.vad_sensitivity <= 1.0:
-                raise ValueError("VAD敏感度必须在0.0-1.0之间")
+            if not 0.0 <= self.vad_threshold <= 1.0:
+                raise ValueError("VAD阈值必须在0.0-1.0之间")
 
     class PipelineError(Exception):
         pass
@@ -257,7 +257,7 @@ class TestPipelineConfig:
             enable_gpu=False,
             enable_vad=False,
             auto_restart_on_error=False,
-            vad_sensitivity=0.8,
+            vad_threshold=0.8,
             chunk_duration=2.0
         )
 
@@ -266,7 +266,7 @@ class TestPipelineConfig:
         assert config.enable_gpu == False
         assert config.enable_vad == False
         assert config.auto_restart_on_error == False
-        assert config.vad_sensitivity == 0.8
+        assert config.vad_threshold == 0.8
         assert config.chunk_duration == 2.0
 
     def test_invalid_config_values(self):
@@ -277,8 +277,8 @@ class TestPipelineConfig:
         with pytest.raises(ValueError, match="处理超时必须大于0"):
             PipelineConfig(processing_timeout=0)
 
-        with pytest.raises(ValueError, match="VAD敏感度必须在0.0-1.0之间"):
-            PipelineConfig(vad_sensitivity=1.5)
+        with pytest.raises(ValueError, match="VAD阈值必须在0.0-1.0之间"):
+            PipelineConfig(vad_threshold=1.5)
 
 
 class TestPipelineCoordinator:

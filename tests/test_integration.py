@@ -4,28 +4,25 @@
 测试各组件间的协作和端到端功能
 """
 
-import sys
 import os
-import pytest
-import tempfile
-import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import threading
+import sys
 import time
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import numpy as np
 
 # 添加src目录到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config.models import Config, AudioDevice
+from audio.models import AudioChunk, AudioConfig, AudioSourceType
 from config.manager import ConfigManager
-from hardware.gpu_detector import GPUDetector, GPUInfo
-from audio.models import AudioConfig, AudioChunk, AudioSourceType
-from vad.models import VadConfig, VadResult, VadState
-from transcription.models import TranscriptionConfig, TranscriptionResult, LanguageCode
+from config.models import Config
 from output.models import OutputConfig, OutputFormat
-from utils.logger import LogConfig, LogLevel, setup_logging, get_logger
-from utils.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+from transcription.models import LanguageCode, TranscriptionConfig, TranscriptionResult
+from utils.error_handler import ErrorCategory, ErrorHandler, ErrorSeverity
+from utils.logger import LogConfig, LogLevel, get_logger, setup_logging
+from vad.models import VadConfig, VadResult, VadState
 
 
 class TestConfigManagerIntegration:
@@ -43,7 +40,7 @@ class TestConfigManagerIntegration:
                 "--model-path", str(temp_model),
                 "--input-source", "microphone",
                 "--use-gpu",
-                "--vad-sensitivity", "0.7",
+                "--vad-threshold", "0.7",
                 "--output-format", "json"
             ])
 
@@ -51,7 +48,7 @@ class TestConfigManagerIntegration:
             assert config.model_path == str(temp_model)
             assert config.input_source == "microphone"
             assert config.use_gpu == True
-            assert config.vad_sensitivity == 0.7
+            assert config.vad_threshold == 0.7
             assert config.output_format == "json"
 
             # 测试配置转换为其他模块的配置
@@ -63,7 +60,7 @@ class TestConfigManagerIntegration:
             )
 
             vad_config = VadConfig(
-                sensitivity=config.vad_sensitivity,
+                threshold=config.vad_threshold,
                 min_speech_duration=config.min_speech_duration,
                 min_silence_duration=config.min_silence_duration
             )
@@ -82,7 +79,7 @@ class TestConfigManagerIntegration:
 
             # 验证所有配置都正确创建
             assert audio_config.source_type == AudioSourceType.MICROPHONE
-            assert vad_config.sensitivity == 0.7
+            assert vad_config.threshold == 0.7
             assert transcription_config.use_gpu == True
             assert output_config.format == OutputFormat.JSON
 
@@ -173,7 +170,7 @@ class TestAudioVadIntegration:
 
         # 创建VAD配置
         vad_config = VadConfig(
-            sensitivity=0.5,
+            threshold=0.5,
             min_speech_duration=0.1,
             min_silence_duration=0.3
         )
@@ -320,7 +317,7 @@ class TestFullPipelineIntegration:
         config.model_path = "test_model.onnx"
         config.input_source = "microphone"
         config.use_gpu = False
-        config.vad_sensitivity = 0.7
+        config.vad_threshold = 0.7
         config.output_format = "text"
         config.show_confidence = True
         config.show_timestamp = True
@@ -328,7 +325,7 @@ class TestFullPipelineIntegration:
         # 验证配置完整性
         assert config.model_path is not None
         assert config.input_source in ["microphone", "system"]
-        assert 0.0 <= config.vad_sensitivity <= 1.0
+        assert 0.0 <= config.vad_threshold <= 1.0
         assert config.output_format in ["text", "json", "srt", "vtt"]
 
         # 模拟数据流：音频 -> VAD -> 转录 -> 输出
@@ -494,7 +491,7 @@ class TestConfigurationIntegration:
                 "--input-source", "microphone",
                 "--sample-rate", "22050",
                 "--chunk-size", "2048",
-                "--vad-sensitivity", "0.8",
+                "--vad-threshold", "0.8",
                 "--output-format", "json",
                 "--use-gpu"
             ])
@@ -512,10 +509,10 @@ class TestConfigurationIntegration:
 
             # 2. VAD配置
             vad_config = VadConfig(
-                sensitivity=main_config.vad_sensitivity,
+                threshold=main_config.vad_threshold,
                 sample_rate=main_config.sample_rate
             )
-            assert vad_config.sensitivity == 0.8
+            assert vad_config.threshold == 0.8
             assert vad_config.sample_rate == 22050
 
             # 3. 转录配置
@@ -574,10 +571,10 @@ if __name__ == "__main__":
 
             # Test VAD config creation
             vad_config = VadConfig(
-                sensitivity=config.vad_sensitivity,
+                threshold=config.vad_threshold,
                 sample_rate=config.sample_rate
             )
-            print(f"  - VAD config: sensitivity={vad_config.sensitivity}")
+            print(f"  - VAD config: threshold={vad_config.threshold}")
 
             # Test transcription config creation
             transcription_config = TranscriptionConfig(

@@ -77,18 +77,18 @@ python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-
 
 ### 可选参数
 
-#### --vad-sensitivity
-控制语音活动检测的敏感度（0.0-1.0）。
+#### --vad-threshold
+控制语音活动检测的阈值（0.0-1.0）。
 
 ```bash
 # 高敏感度（适合安静环境）
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.3
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.3
 
 # 中等敏感度（推荐设置）
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.5
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.5
 
 # 低敏感度（适合嘈杂环境）
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.8
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.8
 ```
 
 #### GPU控制参数
@@ -129,13 +129,13 @@ python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-
 python main.py \
     --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source microphone \
-    --vad-sensitivity 0.4 \
+    --vad-threshold 0.4 \
     --use-gpu \
     --log-level INFO
 ```
 
 **特点：**
-- 中等VAD敏感度，平衡准确性和响应性
+- 中等VAD阈值，平衡准确性和响应性
 - 启用GPU加速以获得更好性能
 - 适中的日志级别，便于监控状态
 
@@ -148,13 +148,13 @@ python main.py \
 python main.py \
     --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source system \
-    --vad-sensitivity 0.6 \
+    --vad-threshold 0.6 \
     --use-gpu
 ```
 
 **特点：**
 - 使用系统音频输入，捕获播放内容
-- 较低VAD敏感度，避免背景音乐干扰
+- 较高VAD阈值，避免背景音乐干扰
 - GPU加速确保实时性能
 
 ### 场景3：语音笔记
@@ -166,12 +166,12 @@ python main.py \
 python main.py \
     --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source microphone \
-    --vad-sensitivity 0.3 \
+    --vad-threshold 0.3 \
     --log-level WARNING
 ```
 
 **特点：**
-- 高VAD敏感度，捕获轻声说话
+- 低VAD阈值，捕获轻声说话
 - 减少日志输出，专注于转录内容
 - 适合安静环境使用
 
@@ -184,13 +184,13 @@ python main.py \
 python main.py \
     --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx \
     --input-source system \
-    --vad-sensitivity 0.7 \
+    --vad-threshold 0.7 \
     --use-gpu
 ```
 
 **特点：**
 - 使用系统音频捕获视频声音
-- 低VAD敏感度，避免音效干扰
+- 高VAD阈值，避免音效干扰
 - GPU加速处理高质量音频
 
 ## 高级功能
@@ -286,7 +286,7 @@ python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-
 @echo off
 cd /d "F:\py\speech2subtitles"
 call .venv\Scripts\activate.bat
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.5
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.5
 pause
 ```
 
@@ -299,13 +299,13 @@ pause
 #### 会议模式
 ```bash
 # meeting.bat
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.4 --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.4 --use-gpu
 ```
 
 #### 直播模式
 ```bash
 # streaming.bat
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --vad-sensitivity 0.6 --use-gpu
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source system --vad-threshold 0.6 --use-gpu
 ```
 
 #### 调试模式
@@ -362,8 +362,8 @@ set CUDA_VISIBLE_DEVICES=0
 ### 2. 参数调优
 
 ```bash
-# 降低VAD敏感度以减少误触发
-python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.7
+# 提高VAD阈值以减少误触发
+python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.7
 
 # 优化日志级别
 python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --log-level WARNING
@@ -394,8 +394,8 @@ set PYTHONOPTIMIZE=1
 
 2. **转录准确率低**
    ```bash
-   # 调整VAD敏感度
-   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-sensitivity 0.3
+   # 调整VAD阈值
+   python main.py --model-path models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\model.onnx --input-source microphone --vad-threshold 0.3
 
    # 检查音频质量
    python tools/audio_info.py

@@ -203,7 +203,7 @@ python main.py \
 - CLI 仅覆盖显式传入的参数；未显式传入时，不会用 CLI 默认值覆盖配置文件。
 
 #### 实时转录可选参数
-- `--vad-sensitivity`：VAD敏感度（0.0-1.0，默认0.5，兼容参数）
+- `--vad-threshold`：VAD阈值（0.0-1.0，默认0.5）
 - `--transcription-language`：转录语言提示（`auto`/`zh`/`en`）
 - `--output-format`：输出格式（text/json，默认text）
 - `--device-id`：指定音频设备ID
@@ -246,7 +246,7 @@ python main.py \
 
 ### VAD（语音活动检测）配置
 
-VAD敏感度参数控制语音检测的灵敏度：
+VAD阈值参数控制语音检测的灵敏度：
 - `0.1-0.3`：高敏感度，检测微弱语音
 - `0.4-0.6`：中等敏感度（推荐）
 - `0.7-0.9`：低敏感度，只检测清晰语音
@@ -346,7 +346,6 @@ config/gui_config.json
 | `vad_profiles` | VAD 方案集合 | 至少保留一个方案 | 支持按场景切换（安静/嘈杂） |
 | `active_vad_profile_id` | 当前启用 VAD 方案 ID | 指向 `vad_profiles` 中存在的 ID | 决定实时切分与触发行为 |
 | `vad_threshold`（兼容） | 当前阈值（0.0~1.0） | `0.4`~`0.6` | 越低越敏感；越高越“保守” |
-| `vad_sensitivity`（兼容） | 兼容字段，等价阈值 | 与 `vad_threshold` 二选一 | 兼容老参数名 |
 | `vad_window_size`（兼容） | 窗口时长（秒） | `0.32`~`0.64` | 小窗口响应更快；大窗口更平滑 |
 
 `vad_profiles.<profile_id>` 子字段说明：
@@ -659,10 +658,10 @@ python main.py --model-path models\sherpa-onnx-sense-voice-funasr-nano-2025-12-1
 1. **VAD参数调整**
    ```bash
    # 针对安静环境
-   python main.py --vad-sensitivity 0.3 ...
+   python main.py --vad-threshold 0.3 ...
 
    # 针对嘈杂环境
-   python main.py --vad-sensitivity 0.8 ...
+   python main.py --vad-threshold 0.8 ...
    ```
 
 2. **模型选择**

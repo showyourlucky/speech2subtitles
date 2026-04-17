@@ -184,7 +184,7 @@ python main.py \
   --subtitle-max-display-time 5.0 \
   --subtitle-text-color "#FFFFFF" \
   --subtitle-bg-color "#1a1a1a" \
-  --vad-sensitivity 0.6 \
+  --vad-threshold 0.6 \
   --output-format text
 ```
 

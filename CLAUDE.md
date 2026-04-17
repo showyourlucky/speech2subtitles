@@ -299,7 +299,7 @@ python tools/performance_test.py
 
 # 可选参数
 --no-gpu                   # 禁用GPU加速
---vad-sensitivity FLOAT    # VAD敏感度 (0.0-1.0)
+--vad-threshold FLOAT    # VAD阈值 (0.0-1.0)
 --sample-rate INT          # 采样率 (默认16000)
 --output-format FORMAT     # 输出格式 (text/json)
 --device-id INT           # 指定音频设备ID

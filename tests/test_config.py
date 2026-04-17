@@ -4,17 +4,18 @@
 测试ConfigManager和Config类的功能
 """
 
-import sys
 import os
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 
 # 添加src目录到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config.manager import ConfigManager
-from config.models import Config, AudioDevice
 from config.loader import ConfigLoader
+from config.manager import ConfigManager
+from config.models import AudioDevice, Config
 
 
 class TestConfig:
@@ -59,8 +60,8 @@ class TestConfig:
         finally:
             temp_model.unlink(missing_ok=True)
 
-    def test_invalid_vad_sensitivity(self):
-        """测试无效VAD敏感度"""
+    def test_invalid_vad_threshold(self):
+        """测试无效VAD阈值"""
         temp_model = Path("test_model.onnx")
         temp_model.touch()
 
@@ -69,7 +70,7 @@ class TestConfig:
                 config = Config()
                 config.model_path = str(temp_model)
                 config.input_source = "microphone"
-                config.vad_sensitivity = 1.5
+                config.vad_threshold = 1.5
                 config.validate()
         finally:
             temp_model.unlink(missing_ok=True)
@@ -231,7 +232,7 @@ class TestConfigManager:
             assert config.model_path == str(temp_model)
             assert config.input_source == "microphone"
             assert config.use_gpu == True  # 默认启用GPU
-            assert config.vad_sensitivity == 0.5  # 默认值
+            assert config.vad_threshold == 0.5  # 默认值
         finally:
             temp_model.unlink(missing_ok=True)
 
@@ -246,7 +247,7 @@ class TestConfigManager:
                 "--model-path", str(temp_model),
                 "--input-source", "system",
                 "--no-gpu",
-                "--vad-sensitivity", "0.8",
+                "--vad-threshold", "0.8",
                 "--sample-rate", "22050",
                 "--chunk-size", "2048",
                 "--output-format", "json",
@@ -262,7 +263,7 @@ class TestConfigManager:
             assert config.model_path == str(temp_model)
             assert config.input_source == "system"
             assert config.use_gpu == False  # 禁用GPU
-            assert config.vad_sensitivity == 0.8
+            assert config.vad_threshold == 0.8
             assert config.sample_rate == 22050
             assert config.chunk_size == 2048
             assert config.output_format == "json"
@@ -283,7 +284,7 @@ class TestConfigManager:
 
         assert config.input_source == ""
         assert config.use_gpu == True
-        assert config.vad_sensitivity == 0.5
+        assert config.vad_threshold == 0.5
         assert config.sample_rate == 16000
         assert config.output_format == "text"
         assert config.transcribe_per_vad_segment is True
@@ -323,7 +324,7 @@ class TestConfigManager:
             cli_dict = manager.parse_arguments_to_dict([
                 "--model-path", str(temp_model),
                 "--input-source", "microphone",
-                "--vad-sensitivity", "0.8",
+                "--vad-threshold", "0.8",
                 "--vad-window-size", "0.256"
             ])
 
@@ -403,7 +404,7 @@ if __name__ == "__main__":
         config = manager.parse_arguments([
             "--model-path", str(temp_model),
             "--input-source", "microphone",
-            "--vad-sensitivity", "0.7"
+            "--vad-threshold", "0.7"
         ])
         print("+ Argument parsing successful")
 

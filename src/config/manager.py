@@ -77,13 +77,6 @@ class ConfigManager:
             help="禁用GPU加速，强制使用CPU模式"
         )
         optional.add_argument(
-            "--vad-sensitivity",
-            type=float,
-            default=0.5,
-            metavar="FLOAT",
-            help="VAD语音检测敏感度 (0.0-1.0, 默认: 0.5)"
-        )
-        optional.add_argument(
             "--device-id",
             type=int,
             metavar="INT",
@@ -375,8 +368,6 @@ class ConfigManager:
         # VAD 参数（显式覆盖活动方案）
         if is_explicit("--vad-threshold"):
             cli_dict["vad_threshold"] = parsed_args.vad_threshold
-        elif is_explicit("--vad-sensitivity"):
-            cli_dict["vad_threshold"] = parsed_args.vad_sensitivity
         if is_explicit("--vad-window-size"):
             cli_dict["vad_window_size"] = parsed_args.vad_window_size
 
@@ -530,6 +521,6 @@ class ConfigManager:
             print(f"  字幕最大时长: {config.max_subtitle_duration:.2f}s")
 
         print(f"  GPU加速: {'启用' if config.use_gpu else '禁用'}")
-        print(f"  VAD敏感度: {config.vad_sensitivity}")
+        print(f"  VAD阈值: {config.vad_threshold}")
         print(f"  采样率: {config.sample_rate}Hz")
         print(f"  音频块大小: {config.chunk_size}")

@@ -106,8 +106,8 @@ python main.py \
 # 禁用GPU加速（如果遇到CUDA问题）
 python main.py --model-path <模型路径> --input-source system --no-gpu
 
-# 调整VAD敏感度（0.1-0.9，默认0.5）
-python main.py --model-path <模型路径> --input-source system --vad-sensitivity 0.7
+# 调整VAD阈值（0.1-0.9，默认0.5）
+python main.py --model-path <模型路径> --input-source system --vad-threshold 0.7
 
 # 指定音频设备ID（如果有多设备）
 python main.py --model-path <模型路径> --input-source system --device-id 24
@@ -168,14 +168,14 @@ python main.py --model-path <模型路径> --input-source system --log-level DEB
 
 **解决方案**:
 1. 使用GPU加速（如果可用）
-2. 调整VAD敏感度参数
+2. 调整VAD阈值参数
 3. 检查系统性能（CPU/内存使用率）
 
 #### 问题4: 转录准确率低
 
 **解决方案**:
 1. 确保音频质量良好（无噪音）
-2. 调整VAD敏感度（0.3-0.7之间）
+2. 调整VAD阈值（0.1-0.7之间）
 3. 使用高质量音频源
 
 #### 问题5: PyAudio安装失败
@@ -221,7 +221,7 @@ python tools/vad_test.py
 
 ### 3. 转录设置优化
 - GPU加速可显著提升性能
-- 根据需要调整VAD敏感度
+- 根据需要调整VAD阈值
 - 选择合适的模型文件大小
 
 ## 注意事项

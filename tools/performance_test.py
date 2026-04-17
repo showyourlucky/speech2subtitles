@@ -11,28 +11,30 @@
 - GPU利用率
 """
 
-import time
-import psutil
-import numpy as np
-import logging
 import json
-import sys
 import os
-from typing import Dict, List, Any
+import sys
+import time
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+import psutil
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # 导入项目组件
+from src.audio.models import AudioChunk
 from src.config.models import Config
 from src.hardware.gpu_detector import GPUDetector
-from src.audio.models import AudioDevice, AudioChunk
-from src.vad import VadManager  # 使用 VAD 管理器
-from src.transcription.engine_manager import TranscriptionEngineManager  # 使用转录引擎管理器
 from src.output.handler import OutputHandler
-from src.utils.logger import setup_logging, get_logger, LogConfig, LogLevel
+from src.transcription.engine_manager import (
+    TranscriptionEngineManager,  # 使用转录引擎管理器
+)
+from src.utils.logger import LogConfig, LogLevel, get_logger, setup_logging
+from src.vad import VadManager  # 使用 VAD 管理器
 
 # 配置日志
 setup_logging(LogConfig(level=LogLevel.INFO))
@@ -46,7 +48,7 @@ class PerformanceTestSuite:
         self.results = {}
         self.gpu_detector = GPUDetector()
 
-    def run_all_tests(self) -> Dict[str, Any]:
+    def run_all_tests(self) -> dict[str, Any]:
         """运行所有性能测试"""
         logger.info("开始性能测试套件...")
 
@@ -65,7 +67,7 @@ class PerformanceTestSuite:
 
         return self.results
 
-    def _collect_system_info(self) -> Dict[str, Any]:
+    def _collect_system_info(self) -> dict[str, Any]:
         """收集系统信息"""
         logger.info("收集系统信息...")
 
@@ -110,7 +112,7 @@ class PerformanceTestSuite:
             'gpu': gpu_info
         }
 
-    def _test_gpu_detection(self) -> Dict[str, Any]:
+    def _test_gpu_detection(self) -> dict[str, Any]:
         """测试GPU检测性能"""
         logger.info("测试GPU检测性能...")
 
@@ -149,7 +151,7 @@ class PerformanceTestSuite:
 
         return results
 
-    def _test_vad_performance(self) -> Dict[str, Any]:
+    def _test_vad_performance(self) -> dict[str, Any]:
         """测试VAD性能"""
         logger.info("测试VAD性能...")
 
@@ -223,7 +225,7 @@ class PerformanceTestSuite:
 
         return results
 
-    def _test_transcription_performance(self) -> Dict[str, Any]:
+    def _test_transcription_performance(self) -> dict[str, Any]:
         """测试转录引擎性能"""
         logger.info("测试转录引擎性能...")
 
@@ -298,7 +300,7 @@ class PerformanceTestSuite:
 
         return results
 
-    def _test_memory_usage(self) -> Dict[str, Any]:
+    def _test_memory_usage(self) -> dict[str, Any]:
         """测试内存使用情况"""
         logger.info("测试内存使用情况...")
 
@@ -367,7 +369,7 @@ class PerformanceTestSuite:
 
         return results
 
-    def _test_integration_performance(self) -> Dict[str, Any]:
+    def _test_integration_performance(self) -> dict[str, Any]:
         """测试集成性能"""
         logger.info("测试集成性能...")
 
@@ -538,7 +540,7 @@ class PerformanceTestSuite:
                 f.write(f"满足实时要求: {integration_results['meets_realtime']}\n")
                 f.write(f"成功率: {integration_results['success_rate']:.2%}\n")
 
-        logger.info(f"性能报告已生成:")
+        logger.info("性能报告已生成:")
         logger.info(f"  JSON: {json_report_path}")
         logger.info(f"  文本: {text_report_path}")
 
@@ -552,7 +554,7 @@ def main():
     config = Config(
         model_path="models/sense-voice.onnx",  # 模型文件路径
         input_source="microphone",
-        vad_sensitivity=0.5,
+        vad_threshold=0.5,
         use_gpu=True
     )
 
