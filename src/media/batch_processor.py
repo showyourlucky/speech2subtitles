@@ -36,6 +36,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# 核心处理链路(便于快速理解):
+# 1) process_file/process_files 负责文件级生命周期管理(进度、异常、统计、回调)
+# 2) _prepare_merged_mode_context 完成“音频读取 + VAD喂数”阶段
+# 3) _transcribe_merged_vad_segments 负责“VAD段分组 + 批量解码 + 文本回填”
+# 4) _normalize_segments 负责最终字幕的时间轴清理
+
 
 class BatchProcessorError(Exception):
     """批量处理错误"""
@@ -106,11 +112,19 @@ class BatchProcessor:
         """
         self.converter = converter
         self.subtitle_gen = subtitle_gen
+        # 以下阈值统一在初始化时做边界保护，避免运行期出现非法参数导致流程中断。
+        # 说明:
+        # - merge_target_duration: 短语音分组后的目标总时长(包含组内静音)
+        # - long_segment_threshold: 超过该阈值的段单独成组，不与其它段合并
+        # - merge_max_gap: 相邻段静音超过该值则强制断组
+        # - max_subtitle_duration: 单条输出字幕最大时长，超出后进入拆分策略
         self.transcribe_per_vad_segment = bool(transcribe_per_vad_segment)
         self.stream_merge_target_duration = max(0.1, float(stream_merge_target_duration))
         self.stream_long_segment_threshold = max(0.1, float(stream_long_segment_threshold))
         self.stream_merge_max_gap = max(0.0, float(stream_merge_max_gap))
         self.max_subtitle_duration = max(0.1, float(max_subtitle_duration))
+        # 配置优先级: 显式参数 > 环境变量 > 默认值。
+        # 这样可以兼顾代码调用侧、CLI/GUI环境配置和开箱默认行为。
         env_debug_enabled = self._parse_bool_env(os.getenv("S2S_DEBUG_DUMP_VAD_SEGMENTS"))
         self.debug_dump_vad_segments = (
             env_debug_enabled if debug_dump_vad_segments is None else bool(debug_dump_vad_segments)
@@ -471,20 +485,24 @@ class BatchProcessor:
             or duration_s <= 0
             or not target_ratios
         ):
+            # 入参不满足“可计算切分点”的最小条件时，直接回退到上层默认策略。
             return []
 
         samples = np.asarray(segment_samples, dtype=np.float32).reshape(-1)
         if samples.size < 16:
+            # 样本太短时，能量曲线没有统计意义，继续计算只会引入噪声。
             return []
 
         # 30ms 帧 + 10ms 帧移，兼顾时间分辨率与稳定性
         frame_size = max(64, int(sample_rate_hz * 0.03))
         hop_size = max(32, int(sample_rate_hz * 0.01))
         if samples.size <= frame_size:
+            # 少于一帧时无法形成“可比较的多帧能量”，直接放弃音频对齐。
             return []
 
         frame_count = 1 + (samples.size - frame_size) // hop_size
         if frame_count <= 1:
+            # 仅有一帧同样无法做“低能量点搜索”。
             return []
 
         # 使用前缀和计算每帧均方能量，减少重复求和开销
@@ -501,6 +519,7 @@ class BatchProcessor:
             kernel = np.ones(5, dtype=np.float64) / 5.0
             energies = np.convolve(energies, kernel, mode="same")
 
+        # frame_times 与 energies 一一对应，后续会用它在目标窗口内搜索最佳切分点。
         frame_times = (
             np.arange(frame_count, dtype=np.float64) * hop_size + frame_size / 2.0
         ) / float(sample_rate_hz)
@@ -515,8 +534,12 @@ class BatchProcessor:
         search_half_window_s = 0.8
 
         for ratio in target_ratios:
+            # ratio 是累计文本比例(0~1)，ideal_s 是“理想切点时间”。
             ideal_s = float(ratio) * effective_duration_s
 
+            # 实际搜索窗口围绕理想切点展开，同时保证:
+            # 1) 不越过前一个切点(保持时间单调递增)
+            # 2) 不贴到段首/段尾(给字幕留出最小展示时长)
             low_s = max(prev_boundary_s + min_gap_s, ideal_s - search_half_window_s)
             high_s = min(
                 effective_duration_s - min_gap_s,
@@ -524,6 +547,7 @@ class BatchProcessor:
             )
 
             if high_s <= low_s:
+                # 窗口无效时采用保守回退: 直接使用裁剪后的理想点。
                 aligned_s = max(
                     prev_boundary_s + min_gap_s,
                     min(ideal_s, effective_duration_s - min_gap_s),
@@ -534,6 +558,7 @@ class BatchProcessor:
 
             frame_indices = np.where((frame_times >= low_s) & (frame_times <= high_s))[0]
             if frame_indices.size == 0:
+                # 没找到可用帧时与上面一致，回退到理想点。
                 aligned_s = max(
                     prev_boundary_s + min_gap_s,
                     min(ideal_s, effective_duration_s - min_gap_s),
@@ -545,6 +570,7 @@ class BatchProcessor:
             local_times = frame_times[frame_indices]
             local_energies = energies[frame_indices]
 
+            # 归一化到0~1，便于把“能量项”和“距离项”组合成统一评分。
             energy_min = float(np.min(local_energies))
             energy_max = float(np.max(local_energies))
             if energy_max > energy_min:
@@ -585,6 +611,7 @@ class BatchProcessor:
         parts = []
         last = 0
         for i in range(1, num_parts):
+            # 预留 remaining_slots 个字符位给后续分段，避免前段吃光文本。
             remaining_slots = num_parts - i
             min_pos = last + 1
             max_pos = max(min_pos, total_len - remaining_slots)
@@ -601,6 +628,7 @@ class BatchProcessor:
                     best = bp
             # 如果附近没有断点,使用理想位置
             if best_dist > max(4, int(target_len * 0.6)):
+                # 偏离过大宁可按理想位置切，也不强行追求标点。
                 best = ideal_pos
             if best <= last:
                 best = ideal_pos
@@ -628,8 +656,11 @@ class BatchProcessor:
         """
         max_subtitle_duration = self.max_subtitle_duration
         if not text or duration <= max_subtitle_duration:
+            # 为空或本身足够短时，不做拆分，避免不必要的时间轴扰动。
             return [Segment(start=start, duration=duration, text=text)]
 
+        # 这里是“最少需要拆成几段”而不是“最多几段”。
+        # 例如时长11秒且max=5秒，会得到3段(而不是2段)。
         num_parts = max(2, int(duration / max_subtitle_duration) + 1)
         # 第一层: 尝试按句级标点拆分
         parts = self._split_text_by_punctuation(text, self._SENTENCE_PATTERN)
@@ -653,6 +684,8 @@ class BatchProcessor:
         total_chars = sum(len(part) for part in parts)
         split_boundaries: list[float] | None = None
         if total_chars > 0 and len(parts) > 1:
+            # 先按字符占比给出“理想切分比例”，再交给音频对齐逻辑寻找低能量边界。
+            # 这样可以同时兼顾语义完整性(文本)与听感边界(音频)。
             cumulative_chars = 0
             target_ratios: list[float] = []
             for part in parts[:-1]:
@@ -666,6 +699,7 @@ class BatchProcessor:
                 target_ratios=target_ratios,
             )
             if len(aligned_boundaries) == len(parts) - 1:
+                # 只有数量完全匹配才采用，避免“部分对齐 + 部分比例”带来的时间跳变。
                 split_boundaries = aligned_boundaries
 
         return self._build_subtitle_segments(
@@ -738,6 +772,7 @@ class BatchProcessor:
             accumulated_ratio = 0.0
 
         while len(result_texts) < len(weights):
+            # 与目标段数量对齐，防止上游按索引读取时越界。
             result_texts.append("")
 
         # 若标点分配产生较多空段，自动回退到比例分配，降低漏字幕概率
@@ -759,6 +794,7 @@ class BatchProcessor:
         total_weight = sum(weights)
         total_chars = len(full_text)
         if total_chars == 0 or total_weight <= 0:
+            # 权重异常时保持“每段都有文本”的保守行为，避免上游空指针或越界。
             return [full_text] * len(weights)
 
         result = []
@@ -775,6 +811,7 @@ class BatchProcessor:
                 if remaining_chars <= 0:
                     char_count = 0
                 elif remaining_chars > remaining_slots:
+                    # 至少给后续每段保留1个字符配额，防止后续全空。
                     max_allowed = max(1, remaining_chars - remaining_slots)
                     char_count = min(max_allowed, desired_count)
                 else:
@@ -815,6 +852,7 @@ class BatchProcessor:
         """
         token_timestamps = getattr(result_obj, "timestamps", None)
         if not isinstance(token_timestamps, list) or not token_timestamps:
+            # 不同ASR实现可能没有timestamps字段，直接回退时长权重。
             return None
 
         valid_timestamps = []
@@ -822,6 +860,7 @@ class BatchProcessor:
             try:
                 valid_timestamps.append(float(ts))
             except Exception:
+                # 单个异常时间戳不影响整体，按“尽量可用”策略跳过。
                 continue
 
         if not valid_timestamps:
@@ -832,6 +871,7 @@ class BatchProcessor:
             start_s = item["merged_start"]
             end_s = item["merged_end"]
             if i == len(timeline) - 1:
+                # 最后一段使用闭区间，避免尾部token因浮点误差被丢失。
                 count = sum(1 for ts in valid_timestamps if start_s <= ts <= end_s)
             else:
                 count = sum(1 for ts in valid_timestamps if start_s <= ts < end_s)
@@ -857,9 +897,12 @@ class BatchProcessor:
         vad_segments: list[dict[str, Any]] = []
         while not vad.empty():
             vs = vad.front
+            # vs.start/vs.samples 都在“采样点坐标系”，这里统一换算到秒，
+            # 方便后续字幕时间轴与日志诊断统一口径。
             start_s = vs.start / sample_rate
             duration_s = len(vs.samples) / sample_rate
             end_s = start_s + duration_s
+            # rms/peak 主要用于调试和质量诊断，不参与业务分配逻辑。
             seg_rms = (
                 float(np.sqrt(np.mean(np.square(vs.samples))))
                 if len(vs.samples) > 0
@@ -913,6 +956,7 @@ class BatchProcessor:
             duration_s = seg["duration"]
 
             if duration_s > long_segment_threshold:
+                # 长段优先“独占一组”: 避免长段和短段混合后造成时间分配失真。
                 if current_group:
                     groups.append(current_group)
                     current_group = []
@@ -928,6 +972,9 @@ class BatchProcessor:
             prev_seg = vad_segments[current_group[-1]]
             gap_s = max(0.0, seg["start"] - prev_seg["end"])
             predicted_span = current_group_span + gap_s + duration_s
+            # 仅在“间隔可接受 + 预计总跨度可接受”时继续并组。
+            # 注意这里使用 group span(语音+静音)而非纯语音时长，
+            # 目的是让“感知到的句子时长”更接近真实播放体验。
             if gap_s > merge_max_gap or predicted_span > merge_target_duration:
                 groups.append(current_group)
                 current_group = [idx]
@@ -965,6 +1012,8 @@ class BatchProcessor:
             """为分组创建识别流，并返回每段在合并音频中的时间轴映射。"""
             chunk_list = []
             timeline: list[dict[str, Any]] = []
+            # merged_cursor 表示“拼接后音频”的游标时间，
+            # 后续 token 时间戳会基于这条时间轴再映射回原始VAD段。
             merged_cursor = 0.0
             prev_end = None
 
@@ -985,7 +1034,9 @@ class BatchProcessor:
                 merged_cursor += seg["duration"]
                 timeline.append(
                     {
+                        # segment_index 用于把解码结果反查到原始VAD段。
                         "segment_index": seg_idx,
+                        # merged_start/merged_end 是“合并流坐标系”时间。
                         "merged_start": merged_start,
                         "merged_end": merged_cursor,
                     }
@@ -1010,6 +1061,8 @@ class BatchProcessor:
             stream, timeline, merged_duration = _build_stream_for_group(group_indices)
             group_start = vad_segments[group_indices[0]]["start"]
             group_end = vad_segments[group_indices[-1]]["end"]
+            # speech_duration 只统计语音内容，gap_duration 统计组内补的静音。
+            # 两者拆开记录后，遇到“文本明显偏短/偏长”更容易判断问题在VAD还是ASR。
             speech_duration = sum(vad_segments[idx]["duration"] for idx in group_indices)
             gap_duration = max(0.0, merged_duration - speech_duration)
             streams.append(stream)
@@ -1067,6 +1120,10 @@ class BatchProcessor:
         group_diagnostics: list[dict[str, Any]] = []
 
         for group_id, (meta, stream) in enumerate(zip(group_info, streams)):
+            # 说明:
+            # - group_info 描述分组元数据与时间轴映射
+            # - stream.result 是批量解码后的文本/token信息
+            # 二者结合后才能把“合并解码结果”正确回填到每个VAD段。
             group_indices = meta["group_indices"]
             is_long = meta["is_long_segment"]
             timeline = meta["timeline"]
@@ -1107,6 +1164,7 @@ class BatchProcessor:
             }
 
             if not text:
+                # 解码为空时保留诊断信息，但不输出字幕段。
                 group_diag["status"] = "decode_empty"
                 group_diagnostics.append(group_diag)
                 continue
@@ -1150,10 +1208,12 @@ class BatchProcessor:
                 durations = [vad_segments[idx]["duration"] for idx in group_indices]
                 timestamp_weights = self._extract_timestamp_weights(result, timeline)
                 if timestamp_weights is not None:
+                    # token时间戳可用时优先使用，通常比纯时长分配更贴近真实语速。
                     token_weight_groups += 1
                     distribution_weights = timestamp_weights
                     group_diag["distribution_mode"] = "timestamp_weights"
                 else:
+                    # 无token时间戳时退回时长权重，确保所有模型都可运行。
                     distribution_weights = durations
                     group_diag["distribution_mode"] = "duration_weights"
                 distributed = self._distribute_text_by_punctuation(
@@ -1161,6 +1221,10 @@ class BatchProcessor:
                     distribution_weights,
                 )
 
+                # 空分配处理策略:
+                # 1) 优先并入上一条字幕(尾部延展)
+                # 2) 若发生在组首，则暂存并等待下一条非空字幕吸收
+                # 3) 若整组都无法吸收，才记为 dropped
                 empty_in_group = 0
                 absorbed_in_group = 0
                 dropped_in_group = 0
@@ -1234,6 +1298,7 @@ class BatchProcessor:
                     segment_diag["output_start"] = actual_start
                     segment_diag["output_duration"] = seg_duration
                     if seg_duration > max_subtitle_duration:
+                        # 即使已经分配到具体VAD段，仍可能超长，需要二次拆分。
                         sub_segs = self._split_text_to_subtitles(
                             seg_text,
                             actual_start,
@@ -1281,6 +1346,7 @@ class BatchProcessor:
                 group_diag["output_segment_count"] = len(new_segments)
                 group_diag["status"] = "ok"
             else:
+                # 允许“有解码文本但最终无输出”的情况留痕，方便排查分配策略问题。
                 group_diag["output_segment_count"] = 0
                 group_diag["status"] = "no_output"
             group_diagnostics.append(group_diag)
@@ -1292,6 +1358,7 @@ class BatchProcessor:
                         on_segment(seg)
 
         stats = {
+            # 这些统计字段仅用于观测与调试，不影响上游业务契约。
             "total_multi_groups": total_multi_groups,
             "token_weight_groups": token_weight_groups,
             "empty_distribution_group_count": empty_distribution_group_count,
@@ -1389,6 +1456,8 @@ class BatchProcessor:
         # 开始时间
         start_time = time.time()
         # 批量解码所有语音段 (提升性能)
+        # 注意: 这里是“每个VAD段单独建流，再统一并行解码”。
+        # 好处是简单直观，代价是跨段上下文信息较少。
         recognizer.decode_streams(streams)
         # 接码耗时
         end_time = time.time()
@@ -1517,6 +1586,7 @@ class BatchProcessor:
         # ============================================================
         start_time = time.time()
         if streams:
+            # 解码完成后，每个stream.result里会写入 text/timestamps 等字段。
             recognizer.decode_streams(streams)
         end_time = time.time()
         logger.info(f"批量解码耗时: {end_time - start_time:.2f}s")
@@ -1542,6 +1612,7 @@ class BatchProcessor:
             token_weight_groups,
             total_multi_groups,
         )
+        # 下述告警仅用于观测质量，不中断流程，避免影响批处理可用性。
         if total_multi_groups > 0 and token_weight_groups == 0:
             logger.warning(
                 "合并组全部回退到时长权重分配: 0/%s 命中token时间戳，建议结合调试导出检查时间对齐质量",
@@ -1633,6 +1704,8 @@ class BatchProcessor:
         if on_progress:
             on_progress(0.0)
 
+        # 先准备音频数据，再取 recognizer / vad，
+        # 保证后续失败时日志能明确定位到“读音频失败”还是“模型构建失败”。
         audio_data = self._load_audio_for_transcription(
             audio_file=audio_file,
             sample_rate=sample_rate,
@@ -1654,7 +1727,7 @@ class BatchProcessor:
             cancel_event=cancel_event,
         )
 
-        # 处理完所有音频后,flush VAD
+        # flush 触发VAD输出尾段，否则末尾语音可能滞留在内部缓冲。
         vad.flush()
         return vad, recognizer, debug_session
 
@@ -1741,6 +1814,8 @@ class BatchProcessor:
                 print("  [1/3] 转换音频格式...")
 
             convert_start = time.time()
+            # 统一转换到16k wav，简化后续VAD/ASR输入约束。
+            # 这样不同来源媒体文件都走同一条可控处理链路。
             temp_wav = self.converter.convert_to_wav(
                 file_path, sample_rate=16000, show_progress=verbose
             )
@@ -1765,6 +1840,10 @@ class BatchProcessor:
                 vad_detector,
                 verbose=verbose,
                 on_segment=on_segment,  # 传递segment回调
+                # 单文件总体进度映射:
+                # - 0~25: 音频转换
+                # - 25~85: 转录(内部0~100折算到60%)
+                # - 85~100: 字幕写盘
                 on_progress=lambda p: on_progress(file_index, 25.0 + p * 0.6)
                 if on_progress
                 else None,  # 25%-85%
@@ -1847,6 +1926,7 @@ class BatchProcessor:
 
         finally:
             # 清理临时文件
+            # finally 块无论成功/失败都会执行，避免临时wav长期堆积。
             if temp_wav and not keep_temp:
                 self.converter.cleanup_temp_file(temp_wav)
 
@@ -1900,6 +1980,7 @@ class BatchProcessor:
         )
 
         if self.transcribe_per_vad_segment:
+            # 模式A: 每段独立识别。适合追求实现简单、问题定位直接的场景。
             segments = self._transcribe_each_vad_segment(
                 vad=vad,
                 recognizer=recognizer,
@@ -1910,6 +1991,7 @@ class BatchProcessor:
                 cancel_event=cancel_event,
             )
         else:
+            # 模式B: 短段合并后识别。通常能提升上下文连贯性和吞吐表现。
             segments = self._transcribe_merged_vad_segments(
                 vad=vad,
                 recognizer=recognizer,
@@ -2049,6 +2131,7 @@ class BatchProcessor:
                             result["rtf"],
                         )
                 else:
+                    # process_file 内部已捕获异常并返回失败结果时，走该分支统计失败。
                     error_count += 1
                     error_detail = result.get("error", "Unknown error")
                     errors.append((str(file_path), error_detail))
@@ -2060,6 +2143,7 @@ class BatchProcessor:
                     )
 
                     # 修复: 失败时也调用完成回调（传递空字符串和0值表示失败）
+                    # 约定统一后，GUI层可以不分“失败来源”直接复用同一回调通道。
                     if on_file_complete:
                         on_file_complete(
                             result["file"],
@@ -2079,6 +2163,7 @@ class BatchProcessor:
                 raise
 
             except Exception as e:
+                # 兜底异常分支: 覆盖 process_file 外层的意外错误，保证批处理可控。
                 error_count += 1
                 error_msg = str(e)
                 errors.append((str(file_path), error_msg))
@@ -2092,6 +2177,7 @@ class BatchProcessor:
                     print(f"  ✗ 异常: {error_msg}")
 
                 # 修复: 异常时也调用完成回调（传递空字符串和0值表示失败）
+                # 这样调用方不需要区分“业务失败”和“异常失败”两种分支。
                 if on_file_complete:
                     on_file_complete(
                         str(file_path),
